@@ -1,5 +1,6 @@
 ﻿using HarmonyLib;
 using System.Text;
+using ChaosEncounters.Combat;
 using ChaosEncounters.Logging;
 using System.Reflection;
 using UnityModManagerNet;
@@ -26,11 +27,12 @@ public static class Main {
             Log.Error($"Harmony patching failed: {exception}");
             throw;
         }
+        CombatStartProbe.Initialize();
         LogInfo("Chaos Encounters loaded successfully.");
         return true;
     }
 
-    private static void LogInfo(string message) {
+    internal static void LogInfo(string message) {
         ModFileLogger.Info(message);
         Log.Log(message);
     }
