@@ -21,6 +21,17 @@ Chaos Encounters is a mod for Warhammer 40,000: Rogue Trader, developed with C#,
 * Warn about edge cases, compatibility risks, and simpler alternatives.
 * Avoid large code changes unless explicitly requested.
 
+## Blockers and incomplete instructions
+
+* If the requested work is blocked, ambiguous, or missing information required for a safe implementation, stop.
+* Clearly explain the blocker, what was discovered, and what information or decision is needed from the user.
+* Do not invent requirements or choose an architectural direction on the user's behalf.
+* Do not create speculative workarounds, fallback systems, retry loops, polling loops, or additional complexity to bypass an unexpected problem.
+* Do not repeatedly modify the code in an attempt to make an unclear solution work.
+* Do not fix unrelated problems discovered during the task without explicit user approval.
+* When a command, compilation, or test fails unexpectedly, report the exact failure and wait for direction before attempting a substantially different approach.
+* Small corrections that are unquestionably required to complete the agreed change are allowed, but anything that changes scope or design requires user approval.
+
 ## Development loop
 
 Implement one small piece, compile it, test it in game, fix it, commit it, and only then add the next piece.
