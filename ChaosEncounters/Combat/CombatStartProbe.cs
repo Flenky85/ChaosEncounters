@@ -1,4 +1,6 @@
+using Kingmaker;
 using Kingmaker.PubSubSystem.Core;
+using System.Linq;
 
 namespace ChaosEncounters.Combat;
 
@@ -17,5 +19,14 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
         }
 
         Main.LogInfo("Combat started.");
+
+        var combatUnits = Game.Instance.State.AllBaseAwakeUnitsForSure
+            .Where(unit => unit.IsInCombat)
+            .ToList();
+
+        Main.LogInfo($"Combat units: {combatUnits.Count}");
+        foreach (var unit in combatUnits) {
+            Main.LogInfo($"Combat unit: {unit.CharacterName}");
+        }
     }
 }
