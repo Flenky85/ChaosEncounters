@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text;
 using UnityModManagerNet;
 
@@ -8,12 +7,10 @@ internal static class ModFileLogger {
     private static string LogPath;
     private static UnityModManager.ModEntry.ModLogger UnityLogger;
 
-    internal static void Initialize(string modVersion, UnityModManager.ModEntry.ModLogger unityLogger) {
+    internal static void Initialize(string modDirectory, string modVersion, UnityModManager.ModEntry.ModLogger unityLogger) {
         UnityLogger = unityLogger;
 
         try {
-            string modDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
-                ?? throw new InvalidOperationException("Could not determine the Chaos Encounters mod directory.");
             string logsDirectory = Path.Combine(modDirectory, "Logs");
             Directory.CreateDirectory(logsDirectory);
 
