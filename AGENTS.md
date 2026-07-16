@@ -32,6 +32,15 @@ Chaos Encounters is a mod for Warhammer 40,000: Rogue Trader, developed with C#,
 * When a command, compilation, or test fails unexpectedly, report the exact failure and wait for direction before attempting a substantially different approach.
 * Small corrections that are unquestionably required to complete the agreed change are allowed, but anything that changes scope or design requires user approval.
 
+## Dependency rules
+
+* Chaos Encounters must not have compile-time or runtime dependencies on other user-installed mods.
+* Other mods may be inspected only as research references.
+* Never reference, import, invoke, copy, or ship assemblies or helper APIs belonging to another mod.
+* Any game type, method, event, or Harmony target discovered through another mod must be independently verified in Rogue Trader's original assemblies before use.
+* Implementation may depend only on Rogue Trader's original assemblies, Unity Mod Manager, Harmony, the .NET framework, and libraries explicitly included by this project.
+* Features must be tested with Chaos Encounters enabled and all unrelated mods disabled whenever practical.
+
 ## Development loop
 
 Implement one small piece, compile it, test it in game, fix it, commit it, and only then add the next piece.
