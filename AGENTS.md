@@ -41,6 +41,45 @@ Chaos Encounters is a mod for Warhammer 40,000: Rogue Trader, developed with C#,
 * Implementation may depend only on Rogue Trader's original assemblies, Unity Mod Manager, Harmony, the .NET framework, and libraries explicitly included by this project.
 * Features must be tested with Chaos Encounters enabled and all unrelated mods disabled whenever practical.
 
+## Performance discipline
+
+* Minimal runtime overhead is a project requirement.
+* Do not perform runtime work that does not support an active feature.
+* Prefer direct Rogue Trader, Unity Mod Manager, Harmony, Unity, or .NET APIs over reflection, dynamic lookup, string-based member access, or assembly scanning.
+* Use reflection only when no verified direct API exists and the user has approved the tradeoff.
+* Do not scan assemblies when there are no active targets to discover.
+* Prefer EventBus handlers and other direct events over polling, `Update()`, repeated ticks, timers, coroutines, or periodic global scans.
+* Identify whether code runs on a cold path or a hot path before implementing it.
+* Treat the following as hot paths unless proven otherwise:
+
+  * Unity frame updates
+  * controller ticks
+  * AI evaluation
+  * combat turns
+  * attacks and damage
+  * movement
+  * ability execution
+  * per-unit callbacks
+* Avoid LINQ, closures, boxing, temporary collections, reflection, repeated blueprint lookups, and avoidable string creation in hot paths.
+* LINQ and temporary snapshots are allowed in infrequent cold paths only when they provide a clear correctness or readability benefit.
+* When LINQ or a temporary collection is used, state how frequently it executes and why the allocation is acceptable.
+* Do not create speculative caches, object pools, background loops, polling systems, or performance abstractions.
+* Cache data only when the source is stable, invalidation is understood, and repeated lookup has a demonstrated or structurally obvious cost.
+* Prefer a single verified enumeration over repeated enumeration of the same game collection.
+* Do not repeatedly enumerate all loaded units when a narrower verified collection or event exists.
+* Research logging may be verbose, but production behavior must avoid unnecessary recurring log output and string allocation.
+* Every proposed implementation must report:
+
+  * execution trigger
+  * expected frequency
+  * collections enumerated
+  * expected allocations
+  * lower-cost alternatives considered
+* Remove confirmed zero-value runtime work, even when its individual cost is small.
+* Do not sacrifice correctness or compatibility for speculative micro-optimizations.
+* Compiler success is not sufficient evidence of performance safety; runtime frequency and allocation behavior must also be considered.
+
+
 ## Development loop
 
 Implement one small piece, compile it, test it in game, fix it, commit it, and only then add the next piece.
