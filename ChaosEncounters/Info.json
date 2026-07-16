@@ -1,0 +1,12 @@
+﻿{
+  "Id": "ChaosEncounters",
+  "DisplayName": "Chaos Encounters",
+  "Author": "",
+  "Version": "1.0.0",
+  "ManagerVersion": "0.25.0",
+  "Requirements": [],
+  "AssemblyName": "ChaosEncounters.dll",
+  "EntryMethod": "ChaosEncounters.Main.Load",
+  "HomePage": "",
+  "Repository": ""
+}
