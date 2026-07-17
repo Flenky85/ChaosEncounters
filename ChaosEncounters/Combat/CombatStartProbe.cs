@@ -13,6 +13,7 @@ internal sealed class CombatStartProbe :
     IPartyCombatHandler,
     IRoundStartHandler,
     ITurnStartHandler,
+    ITurnEndHandler,
     IUnitDieHandler {
     private static readonly CombatStartProbe Instance = new();
 
@@ -61,6 +62,35 @@ internal sealed class CombatStartProbe :
             $"  InCombat: {unit.IsInCombat}");
     }
 
+    public void HandleUnitEndTurn(bool isTurnBased) {
+        if (!isTurnBased ||
+            EventInvokerExtensions.MechanicEntity is not BaseUnitEntity unit ||
+            !unit.IsInCombat) {
+            return;
+        }
+
+        var player = Game.Instance.Player;
+        bool isMainCharacter = unit == player.MainCharacterEntity;
+        bool isPlayerCharacter = player.Party.Contains(unit);
+        bool isPlayerPet =
+            !isPlayerCharacter &&
+            unit.IsPet &&
+            player.PartyAndPets.Contains(unit);
+        string role = GetUnitRole(unit, isMainCharacter, isPlayerCharacter, isPlayerPet);
+        string characterName = unit.CharacterName;
+        string blueprintName = unit.Blueprint.name;
+
+        Main.LogInfo(
+            $"Unit turn ended:\n" +
+            $"  CombatRound: {Game.Instance.TurnController.CombatRound}\n" +
+            $"  Name: {characterName}\n" +
+            $"  Role: {role}\n" +
+            $"  Blueprint: {blueprintName}\n" +
+            $"  PlayerFaction: {unit.IsPlayerFaction}\n" +
+            $"  PlayerEnemy: {unit.IsPlayerEnemy}\n" +
+            $"  InCombat: {unit.IsInCombat}");
+    }
+
     public void OnUnitDie() {
         if (EventInvokerExtensions.AbstractUnitEntity is not BaseUnitEntity unit ||
             !unit.IsInCombat ||
@@ -85,6 +115,7 @@ internal sealed class CombatStartProbe :
 
     public void HandlePartyCombatStateChanged(bool inCombat) {
         if (!inCombat) {
+            Main.LogInfo("Combat ended.");
             return;
         }
 
