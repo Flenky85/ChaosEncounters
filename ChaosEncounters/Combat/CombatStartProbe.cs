@@ -2,17 +2,85 @@ using System.Diagnostics;
 using System.Globalization;
 using Kingmaker;
 using Kingmaker.Blueprints.Classes.Experience;
+using Kingmaker.Controllers.TurnBased;
+using Kingmaker.EntitySystem.Entities;
+using Kingmaker.PubSubSystem;
 using Kingmaker.PubSubSystem.Core;
 
 namespace ChaosEncounters.Combat;
 
-internal sealed class CombatStartProbe : IPartyCombatHandler {
+internal sealed class CombatStartProbe :
+    IPartyCombatHandler,
+    IRoundStartHandler,
+    ITurnStartHandler,
+    IUnitDieHandler {
     private static readonly CombatStartProbe Instance = new();
 
     internal static void Initialize() {
         if (!EventBus.IsGloballySubscribed(Instance)) {
             EventBus.Subscribe(Instance);
         }
+    }
+
+    public void HandleRoundStart(bool isTurnBased) {
+        if (!isTurnBased || !Game.Instance.TurnController.TbActive) {
+            return;
+        }
+
+        Main.LogInfo(
+            $"Combat round started:\n" +
+            $"  CombatRound: {Game.Instance.TurnController.CombatRound}");
+    }
+
+    public void HandleUnitStartTurn(bool isTurnBased) {
+        if (!isTurnBased ||
+            EventInvokerExtensions.MechanicEntity is not BaseUnitEntity unit ||
+            !unit.IsInCombat) {
+            return;
+        }
+
+        var player = Game.Instance.Player;
+        bool isMainCharacter = unit == player.MainCharacterEntity;
+        bool isPlayerCharacter = player.Party.Contains(unit);
+        bool isPlayerPet =
+            !isPlayerCharacter &&
+            unit.IsPet &&
+            player.PartyAndPets.Contains(unit);
+        string role = GetUnitRole(unit, isMainCharacter, isPlayerCharacter, isPlayerPet);
+        string characterName = unit.CharacterName;
+        string blueprintName = unit.Blueprint.name;
+
+        Main.LogInfo(
+            $"Unit turn started:\n" +
+            $"  CombatRound: {Game.Instance.TurnController.CombatRound}\n" +
+            $"  Name: {characterName}\n" +
+            $"  Role: {role}\n" +
+            $"  Blueprint: {blueprintName}\n" +
+            $"  PlayerFaction: {unit.IsPlayerFaction}\n" +
+            $"  PlayerEnemy: {unit.IsPlayerEnemy}\n" +
+            $"  InCombat: {unit.IsInCombat}");
+    }
+
+    public void OnUnitDie() {
+        if (EventInvokerExtensions.AbstractUnitEntity is not BaseUnitEntity unit ||
+            !unit.IsInCombat ||
+            !unit.IsPlayerEnemy ||
+            !unit.LifeState.IsDead) {
+            return;
+        }
+
+        string characterName = unit.CharacterName;
+        string blueprintName = unit.Blueprint.name;
+
+        Main.LogInfo(
+            $"Enemy died:\n" +
+            $"  CombatRound: {Game.Instance.TurnController.CombatRound}\n" +
+            $"  Name: {characterName}\n" +
+            $"  Blueprint: {blueprintName}\n" +
+            $"  DifficultyType: {unit.Blueprint.DifficultyType}\n" +
+            $"  PlayerEnemy: {unit.IsPlayerEnemy}\n" +
+            $"  InCombat: {unit.IsInCombat}\n" +
+            $"  IsDead: {unit.LifeState.IsDead}");
     }
 
     public void HandlePartyCombatStateChanged(bool inCombat) {
@@ -72,28 +140,29 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
                 unit.IsPet &&
                 partyAndPets.Contains(unit);
 
-            string role;
-            if (isMainCharacter) {
-                role = "MainCharacter";
-                mainCharacterCount++;
-            } else if (isPlayerCharacter) {
-                role = "Companion";
-                companionCount++;
-            } else if (isPlayerPet) {
-                role = "PlayerPet";
-                playerPetCount++;
-            } else if (unit.IsPlayerEnemy) {
-                role = "Enemy";
-                enemyCount++;
-            } else if (unit.IsPlayerFaction || unit.IsHelpingPlayerFaction) {
-                role = "AlliedNpc";
-                alliedNpcCount++;
-            } else if (unit.IsNeutral) {
-                role = "Neutral";
-                neutralCount++;
-            } else {
-                role = "Other";
-                otherUnitCount++;
+            string role = GetUnitRole(unit, isMainCharacter, isPlayerCharacter, isPlayerPet);
+            switch (role) {
+                case "MainCharacter":
+                    mainCharacterCount++;
+                    break;
+                case "Companion":
+                    companionCount++;
+                    break;
+                case "PlayerPet":
+                    playerPetCount++;
+                    break;
+                case "Enemy":
+                    enemyCount++;
+                    break;
+                case "AlliedNpc":
+                    alliedNpcCount++;
+                    break;
+                case "Neutral":
+                    neutralCount++;
+                    break;
+                default:
+                    otherUnitCount++;
+                    break;
             }
 
             int nativeWeight = 0;
@@ -235,5 +304,31 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
             $"  Logger calls: {loggerCallMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms\n" +
             $"  Unclassified overhead: {unclassifiedOverheadMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms\n" +
             $"  Total: {totalMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms");
+    }
+
+    private static string GetUnitRole(
+        BaseUnitEntity unit,
+        bool isMainCharacter,
+        bool isPlayerCharacter,
+        bool isPlayerPet) {
+        if (isMainCharacter) {
+            return "MainCharacter";
+        }
+        if (isPlayerCharacter) {
+            return "Companion";
+        }
+        if (isPlayerPet) {
+            return "PlayerPet";
+        }
+        if (unit.IsPlayerEnemy) {
+            return "Enemy";
+        }
+        if (unit.IsPlayerFaction || unit.IsHelpingPlayerFaction) {
+            return "AlliedNpc";
+        }
+        if (unit.IsNeutral) {
+            return "Neutral";
+        }
+        return "Other";
     }
 }
