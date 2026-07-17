@@ -1,7 +1,6 @@
 using Kingmaker;
 using Kingmaker.Blueprints.Classes.Experience;
 using Kingmaker.PubSubSystem.Core;
-using System.Linq;
 
 namespace ChaosEncounters.Combat;
 
@@ -22,12 +21,18 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
         Main.LogInfo("Combat started.");
 
         int areaCr = Game.Instance.CurrentlyLoadedArea?.GetCR() ?? 0;
-        var combatUnits = Game.Instance.State.AllBaseAwakeUnitsForSure
-            .Where(unit => unit.IsInCombat)
-            .ToList();
+        var player = Game.Instance.Player;
+        var mainCharacter = player.MainCharacterEntity;
+        var party = player.Party;
+        var partyAndPets = player.PartyAndPets;
 
-        int playerFactionUnitCount = 0;
-        int playerEnemyCount = 0;
+        int combatUnitCount = 0;
+        int mainCharacterCount = 0;
+        int companionCount = 0;
+        int playerPetCount = 0;
+        int alliedNpcCount = 0;
+        int enemyCount = 0;
+        int neutralCount = 0;
         int otherUnitCount = 0;
         int swarmCount = 0;
         int commonCount = 0;
@@ -39,42 +44,70 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
         int enemiesWithoutArmyCount = 0;
         int totalNativeEnemyWeight = 0;
 
-        Main.LogInfo($"Combat units: {combatUnits.Count}");
-        foreach (var unit in combatUnits) {
-            if (unit.IsPlayerFaction) {
-                playerFactionUnitCount++;
-            } else if (unit.IsPlayerEnemy) {
-                playerEnemyCount++;
-            } else {
-                otherUnitCount++;
+        foreach (var unit in Game.Instance.State.AllBaseAwakeUnitsForSure) {
+            if (!unit.IsInCombat) {
+                continue;
             }
 
-            switch (unit.Blueprint.DifficultyType) {
-                case UnitDifficultyType.Swarm:
-                    swarmCount++;
-                    break;
-                case UnitDifficultyType.Common:
-                    commonCount++;
-                    break;
-                case UnitDifficultyType.Hard:
-                    hardCount++;
-                    break;
-                case UnitDifficultyType.Elite:
-                    eliteCount++;
-                    break;
-                case UnitDifficultyType.MiniBoss:
-                    miniBossCount++;
-                    break;
-                case UnitDifficultyType.Boss:
-                    bossCount++;
-                    break;
-                case UnitDifficultyType.ChapterBoss:
-                    chapterBossCount++;
-                    break;
+            combatUnitCount++;
+
+            bool isMainCharacter = unit == mainCharacter;
+            bool isPlayerCharacter = party.Contains(unit);
+            bool isPlayerPet =
+                !isPlayerCharacter &&
+                unit.IsPet &&
+                partyAndPets.Contains(unit);
+
+            string role;
+            if (isMainCharacter) {
+                role = "MainCharacter";
+                mainCharacterCount++;
+            } else if (isPlayerCharacter) {
+                role = "Companion";
+                companionCount++;
+            } else if (isPlayerPet) {
+                role = "PlayerPet";
+                playerPetCount++;
+            } else if (unit.IsPlayerEnemy) {
+                role = "Enemy";
+                enemyCount++;
+            } else if (unit.IsPlayerFaction || unit.IsHelpingPlayerFaction) {
+                role = "AlliedNpc";
+                alliedNpcCount++;
+            } else if (unit.IsNeutral) {
+                role = "Neutral";
+                neutralCount++;
+            } else {
+                role = "Other";
+                otherUnitCount++;
             }
 
             int nativeWeight = 0;
             if (unit.IsPlayerEnemy) {
+                switch (unit.Blueprint.DifficultyType) {
+                    case UnitDifficultyType.Swarm:
+                        swarmCount++;
+                        break;
+                    case UnitDifficultyType.Common:
+                        commonCount++;
+                        break;
+                    case UnitDifficultyType.Hard:
+                        hardCount++;
+                        break;
+                    case UnitDifficultyType.Elite:
+                        eliteCount++;
+                        break;
+                    case UnitDifficultyType.MiniBoss:
+                        miniBossCount++;
+                        break;
+                    case UnitDifficultyType.Boss:
+                        bossCount++;
+                        break;
+                    case UnitDifficultyType.ChapterBoss:
+                        chapterBossCount++;
+                        break;
+                }
+
                 nativeWeight = ExperienceHelper.GetMobExp(unit.Blueprint.DifficultyType, areaCr);
                 totalNativeEnemyWeight += nativeWeight;
                 if (unit.Blueprint.Army == null) {
@@ -85,9 +118,14 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
             Main.LogInfo(
                 $"Combat unit:\n" +
                 $"  Name: {unit.CharacterName}\n" +
+                $"  Role: {role}\n" +
                 $"  Blueprint: {unit.Blueprint.name}\n" +
+                $"  IsPet: {unit.IsPet}\n" +
+                $"  IsInPlayerParty: {unit.IsInPlayerParty}\n" +
                 $"  PlayerFaction: {unit.IsPlayerFaction}\n" +
+                $"  IsHelpingPlayerFaction: {unit.IsHelpingPlayerFaction}\n" +
                 $"  PlayerEnemy: {unit.IsPlayerEnemy}\n" +
+                $"  IsNeutral: {unit.IsNeutral}\n" +
                 $"  InCombat: {unit.IsInCombat}\n" +
                 $"  DifficultyType: {unit.Blueprint.DifficultyType}\n" +
                 $"  AreaCR: {areaCr}\n" +
@@ -95,12 +133,21 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
                 $"  NativeWeight: {nativeWeight}");
         }
 
+        Main.LogInfo($"Combat units: {combatUnitCount}");
+
         Main.LogInfo(
-            $"Combat difficulty summary:\n" +
+            $"Combat role summary:\n" +
+            $"  MainCharacters: {mainCharacterCount}\n" +
+            $"  Companions: {companionCount}\n" +
+            $"  PlayerPets: {playerPetCount}\n" +
+            $"  AlliedNpcs: {alliedNpcCount}\n" +
+            $"  Enemies: {enemyCount}\n" +
+            $"  NeutralUnits: {neutralCount}\n" +
+            $"  OtherUnits: {otherUnitCount}");
+
+        Main.LogInfo(
+            $"Enemy difficulty summary:\n" +
             $"  AreaCR: {areaCr}\n" +
-            $"  PlayerFactionUnits: {playerFactionUnitCount}\n" +
-            $"  PlayerEnemies: {playerEnemyCount}\n" +
-            $"  OtherUnits: {otherUnitCount}\n" +
             $"  Swarm: {swarmCount}\n" +
             $"  Common: {commonCount}\n" +
             $"  Hard: {hardCount}\n" +
