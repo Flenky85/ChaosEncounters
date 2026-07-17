@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using Kingmaker;
+using Kingmaker.Blueprints;
 using Kingmaker.Blueprints.Classes.Experience;
 using Kingmaker.PubSubSystem.Core;
 
@@ -53,6 +55,7 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
         int chapterBossCount = 0;
         int enemiesWithoutArmyCount = 0;
         int totalNativeEnemyWeight = 0;
+        var encounterBlueprints = new List<BlueprintUnit>();
         unitDataAndCalculationTicks += Stopwatch.GetTimestamp() - phaseStarted;
 
         long loopStringConstructionTicks = stringConstructionTicks;
@@ -64,6 +67,10 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
             }
 
             combatUnitCount++;
+
+            if (!unit.IsPlayerFaction && unit.Blueprint != null) {
+                encounterBlueprints.Add(unit.Blueprint);
+            }
 
             bool isMainCharacter = unit == mainCharacter;
             bool isPlayerCharacter = party.Contains(unit);
@@ -164,6 +171,8 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
             Main.LogInfo(unitDiagnostic);
             loggerCallTicks += Stopwatch.GetTimestamp() - loggerCallStarted;
         }
+        int totalChallengeRating =
+            Kingmaker.Cheats.Utilities.GetTotalChallengeRating(encounterBlueprints);
         unitDataAndCalculationTicks +=
             Stopwatch.GetTimestamp() - phaseStarted -
             (stringConstructionTicks - loopStringConstructionTicks) -
@@ -197,6 +206,7 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
         string enemyDifficultySummary =
             $"Enemy difficulty summary:\n" +
             $"  AreaCR: {areaCr}\n" +
+            $"  TotalChallengeRating: {totalChallengeRating}\n" +
             $"  Swarm: {swarmCount}\n" +
             $"  Common: {commonCount}\n" +
             $"  Hard: {hardCount}\n" +
