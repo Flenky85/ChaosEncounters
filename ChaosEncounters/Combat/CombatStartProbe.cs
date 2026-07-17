@@ -21,8 +21,15 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
         }
 
         var stopwatch = Stopwatch.StartNew();
-        Main.LogInfo("Combat started.");
+        long unitDataAndCalculationTicks = 0;
+        long stringConstructionTicks = 0;
+        long loggerCallTicks = 0;
 
+        long phaseStarted = Stopwatch.GetTimestamp();
+        Main.LogInfo("Combat started.");
+        loggerCallTicks += Stopwatch.GetTimestamp() - phaseStarted;
+
+        phaseStarted = Stopwatch.GetTimestamp();
         int areaCr = Game.Instance.CurrentlyLoadedArea?.GetCR() ?? 0;
         var player = Game.Instance.Player;
         var mainCharacter = player.MainCharacterEntity;
@@ -46,7 +53,11 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
         int chapterBossCount = 0;
         int enemiesWithoutArmyCount = 0;
         int totalNativeEnemyWeight = 0;
+        unitDataAndCalculationTicks += Stopwatch.GetTimestamp() - phaseStarted;
 
+        long loopStringConstructionTicks = stringConstructionTicks;
+        long loopLoggerCallTicks = loggerCallTicks;
+        phaseStarted = Stopwatch.GetTimestamp();
         foreach (var unit in Game.Instance.State.AllBaseAwakeUnitsForSure) {
             if (!unit.IsInCombat) {
                 continue;
@@ -118,27 +129,56 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
                 }
             }
 
-            Main.LogInfo(
+            string characterName = unit.CharacterName;
+            string blueprintName = unit.Blueprint.name;
+            bool isPet = unit.IsPet;
+            bool isInPlayerParty = unit.IsInPlayerParty;
+            bool isPlayerFaction = unit.IsPlayerFaction;
+            bool isHelpingPlayerFaction = unit.IsHelpingPlayerFaction;
+            bool isPlayerEnemy = unit.IsPlayerEnemy;
+            bool isNeutral = unit.IsNeutral;
+            bool isInCombat = unit.IsInCombat;
+            UnitDifficultyType difficultyType = unit.Blueprint.DifficultyType;
+            bool armyBased = unit.Blueprint.Army != null;
+
+            long stringConstructionStarted = Stopwatch.GetTimestamp();
+            string unitDiagnostic =
                 $"Combat unit:\n" +
-                $"  Name: {unit.CharacterName}\n" +
+                $"  Name: {characterName}\n" +
                 $"  Role: {role}\n" +
-                $"  Blueprint: {unit.Blueprint.name}\n" +
-                $"  IsPet: {unit.IsPet}\n" +
-                $"  IsInPlayerParty: {unit.IsInPlayerParty}\n" +
-                $"  PlayerFaction: {unit.IsPlayerFaction}\n" +
-                $"  IsHelpingPlayerFaction: {unit.IsHelpingPlayerFaction}\n" +
-                $"  PlayerEnemy: {unit.IsPlayerEnemy}\n" +
-                $"  IsNeutral: {unit.IsNeutral}\n" +
-                $"  InCombat: {unit.IsInCombat}\n" +
-                $"  DifficultyType: {unit.Blueprint.DifficultyType}\n" +
+                $"  Blueprint: {blueprintName}\n" +
+                $"  IsPet: {isPet}\n" +
+                $"  IsInPlayerParty: {isInPlayerParty}\n" +
+                $"  PlayerFaction: {isPlayerFaction}\n" +
+                $"  IsHelpingPlayerFaction: {isHelpingPlayerFaction}\n" +
+                $"  PlayerEnemy: {isPlayerEnemy}\n" +
+                $"  IsNeutral: {isNeutral}\n" +
+                $"  InCombat: {isInCombat}\n" +
+                $"  DifficultyType: {difficultyType}\n" +
                 $"  AreaCR: {areaCr}\n" +
-                $"  ArmyBased: {unit.Blueprint.Army != null}\n" +
-                $"  NativeWeight: {nativeWeight}");
+                $"  ArmyBased: {armyBased}\n" +
+                $"  NativeWeight: {nativeWeight}";
+            stringConstructionTicks += Stopwatch.GetTimestamp() - stringConstructionStarted;
+
+            long loggerCallStarted = Stopwatch.GetTimestamp();
+            Main.LogInfo(unitDiagnostic);
+            loggerCallTicks += Stopwatch.GetTimestamp() - loggerCallStarted;
         }
+        unitDataAndCalculationTicks +=
+            Stopwatch.GetTimestamp() - phaseStarted -
+            (stringConstructionTicks - loopStringConstructionTicks) -
+            (loggerCallTicks - loopLoggerCallTicks);
 
-        Main.LogInfo($"Combat units: {combatUnitCount}");
+        phaseStarted = Stopwatch.GetTimestamp();
+        string combatUnitSummary = $"Combat units: {combatUnitCount}";
+        stringConstructionTicks += Stopwatch.GetTimestamp() - phaseStarted;
 
-        Main.LogInfo(
+        phaseStarted = Stopwatch.GetTimestamp();
+        Main.LogInfo(combatUnitSummary);
+        loggerCallTicks += Stopwatch.GetTimestamp() - phaseStarted;
+
+        phaseStarted = Stopwatch.GetTimestamp();
+        string combatRoleSummary =
             $"Combat role summary:\n" +
             $"  MainCharacters: {mainCharacterCount}\n" +
             $"  Companions: {companionCount}\n" +
@@ -146,9 +186,15 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
             $"  AlliedNpcs: {alliedNpcCount}\n" +
             $"  Enemies: {enemyCount}\n" +
             $"  NeutralUnits: {neutralCount}\n" +
-            $"  OtherUnits: {otherUnitCount}");
+            $"  OtherUnits: {otherUnitCount}";
+        stringConstructionTicks += Stopwatch.GetTimestamp() - phaseStarted;
 
-        Main.LogInfo(
+        phaseStarted = Stopwatch.GetTimestamp();
+        Main.LogInfo(combatRoleSummary);
+        loggerCallTicks += Stopwatch.GetTimestamp() - phaseStarted;
+
+        phaseStarted = Stopwatch.GetTimestamp();
+        string enemyDifficultySummary =
             $"Enemy difficulty summary:\n" +
             $"  AreaCR: {areaCr}\n" +
             $"  Swarm: {swarmCount}\n" +
@@ -159,9 +205,35 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
             $"  Boss: {bossCount}\n" +
             $"  ChapterBoss: {chapterBossCount}\n" +
             $"  EnemiesWithoutArmy: {enemiesWithoutArmyCount}\n" +
-            $"  TotalNativeEnemyWeight: {totalNativeEnemyWeight}");
+            $"  TotalNativeEnemyWeight: {totalNativeEnemyWeight}";
+        stringConstructionTicks += Stopwatch.GetTimestamp() - phaseStarted;
 
+        phaseStarted = Stopwatch.GetTimestamp();
+        Main.LogInfo(enemyDifficultySummary);
+        long finalLoggerCallEnded = Stopwatch.GetTimestamp();
         stopwatch.Stop();
-        Main.LogInfo($"Combat diagnostics completed in {stopwatch.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms.");
+        loggerCallTicks += finalLoggerCallEnded - phaseStarted;
+
+        double timestampTicksToMilliseconds = 1000.0 / Stopwatch.Frequency;
+        double unitDataAndCalculationMilliseconds = unitDataAndCalculationTicks * timestampTicksToMilliseconds;
+        double stringConstructionMilliseconds = stringConstructionTicks * timestampTicksToMilliseconds;
+        double loggerCallMilliseconds = loggerCallTicks * timestampTicksToMilliseconds;
+        double totalMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+        double unclassifiedOverheadMilliseconds =
+            totalMilliseconds -
+            unitDataAndCalculationMilliseconds -
+            stringConstructionMilliseconds -
+            loggerCallMilliseconds;
+        if (unclassifiedOverheadMilliseconds < 0) {
+            unclassifiedOverheadMilliseconds = 0;
+        }
+
+        Main.LogInfo(
+            $"Combat diagnostics timing:\n" +
+            $"  Unit data and calculations: {unitDataAndCalculationMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms\n" +
+            $"  Diagnostic string construction: {stringConstructionMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms\n" +
+            $"  Logger calls: {loggerCallMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms\n" +
+            $"  Unclassified overhead: {unclassifiedOverheadMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms\n" +
+            $"  Total: {totalMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms");
     }
 }
