@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Globalization;
 using Kingmaker;
 using Kingmaker.Blueprints.Classes.Experience;
 using Kingmaker.PubSubSystem.Core;
@@ -18,6 +20,7 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
             return;
         }
 
+        var stopwatch = Stopwatch.StartNew();
         Main.LogInfo("Combat started.");
 
         int areaCr = Game.Instance.CurrentlyLoadedArea?.GetCR() ?? 0;
@@ -157,5 +160,8 @@ internal sealed class CombatStartProbe : IPartyCombatHandler {
             $"  ChapterBoss: {chapterBossCount}\n" +
             $"  EnemiesWithoutArmy: {enemiesWithoutArmyCount}\n" +
             $"  TotalNativeEnemyWeight: {totalNativeEnemyWeight}");
+
+        stopwatch.Stop();
+        Main.LogInfo($"Combat diagnostics completed in {stopwatch.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms.");
     }
 }
