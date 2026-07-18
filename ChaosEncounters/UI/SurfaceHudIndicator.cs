@@ -34,14 +34,12 @@ internal static class SurfaceHudIndicatorPatch {
 }
 
 internal static class SurfaceHudIndicatorController {
-    private const string ParentPath = "SurfaceActionBarPCView/AdditionalContainer";
     private const string ContainerName = "ChaosEncountersIndicatorContainer";
     private const string IndicatorName = "ChaosEncountersIndicator_MatarEnOrden";
     private const string TooltipTitle = "Matar en orden";
     private const string TooltipDescription = "Mata a los enemigos siguiendo el orden indicado.";
 
     private static bool IsCombatActive;
-    private static bool ParentLookupAttempted;
     private static SurfaceHUDPCView CurrentHud;
     private static RectTransform CurrentParent;
     private static ChaosEncounterIndicatorHost CurrentHost;
@@ -67,8 +65,10 @@ internal static class SurfaceHudIndicatorController {
 
             RemoveIndicator(preserveHudReference: false);
             CurrentHud = hud;
-            CurrentParent = null;
-            ParentLookupAttempted = false;
+            CurrentParent = hud.transform as RectTransform;
+            if (CurrentParent == null) {
+                Main.LogError("The bound Surface HUD root is not a RectTransform; indicator was not created.");
+            }
         }
 
         if (IsCombatActive) {
@@ -87,21 +87,12 @@ internal static class SurfaceHudIndicatorController {
         if (!preserveHudReference && CurrentHud == owningHud) {
             CurrentHud = null;
             CurrentParent = null;
-            ParentLookupAttempted = false;
         }
     }
 
     private static void EnsureIndicator() {
         if (!IsCombatActive || CurrentHud == null || CurrentHost != null) {
             return;
-        }
-
-        if (!ParentLookupAttempted) {
-            ParentLookupAttempted = true;
-            CurrentParent = CurrentHud.transform.Find(ParentPath) as RectTransform;
-            if (CurrentParent == null) {
-                Main.LogWarning($"Surface HUD parent '{ParentPath}' was not found; indicator was not created.");
-            }
         }
 
         if (CurrentParent == null) {
