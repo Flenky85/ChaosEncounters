@@ -131,7 +131,7 @@ internal static class SurfaceHudIndicatorController {
             container.anchorMin = Vector2.zero;
             container.anchorMax = Vector2.zero;
             container.pivot = Vector2.zero;
-            container.anchoredPosition = new Vector2(200f, 140f);
+            container.anchoredPosition = new Vector2(80f, 205f);
             container.sizeDelta = new Vector2(114f, 34f);
             container.SetAsLastSibling();
 
