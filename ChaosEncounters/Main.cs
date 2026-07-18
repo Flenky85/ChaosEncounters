@@ -11,10 +11,12 @@ public static class Main {
     public static bool Load(UnityModManager.ModEntry modEntry) {
         Log = modEntry.Logger;
         ModFileLogger.Initialize(modEntry.Path, modEntry.Info.Version, Log);
+        UnitOvertipHierarchyLogger.Initialize(modEntry.Path, modEntry.Info.Version, Log);
         LogInfo("General logger initialized.");
         modEntry.OnGUI = OnGUI;
         CombatStartProbe.Initialize();
         SurfaceHudIndicator.Initialize();
+        UnitOvertipHierarchyProbe.Initialize();
         LogInfo("Chaos Encounters loaded successfully.");
         return true;
     }
