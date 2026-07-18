@@ -131,8 +131,8 @@ internal static class SurfaceHudIndicatorController {
             container.anchorMin = Vector2.zero;
             container.anchorMax = Vector2.zero;
             container.pivot = Vector2.zero;
-            container.anchoredPosition = new Vector2(80f, 205f);
-            container.sizeDelta = new Vector2(114f, 34f);
+            container.anchoredPosition = new Vector2(18f, 185f);
+            container.sizeDelta = new Vector2(216f, 68f);
             container.SetAsLastSibling();
 
             HorizontalLayoutGroup layout = containerObject.GetComponent<HorizontalLayoutGroup>();
@@ -151,7 +151,7 @@ internal static class SurfaceHudIndicatorController {
             indicatorObject.layer = containerObject.layer;
             RectTransform indicator = (RectTransform)indicatorObject.transform;
             indicator.SetParent(container, worldPositionStays: false);
-            indicator.sizeDelta = new Vector2(34f, 34f);
+            indicator.sizeDelta = new Vector2(68f, 68f);
 
             Image image = indicatorObject.GetComponent<Image>();
             image.sprite = icon;
