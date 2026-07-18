@@ -12,6 +12,7 @@ namespace ChaosEncounters.Combat;
 internal sealed class CombatStartProbe :
     IPartyCombatHandler,
     IRoundStartHandler,
+    IRoundEndHandler,
     ITurnStartHandler,
     ITurnEndHandler,
     IUnitDieHandler {
@@ -30,6 +31,18 @@ internal sealed class CombatStartProbe :
 
         Main.LogInfo(
             $"Combat round started:\n" +
+            $"  CombatRound: {Game.Instance.TurnController.CombatRound}");
+    }
+
+    public void HandleRoundEnd(bool isTurnBased, bool isFirst) {
+        if (!isTurnBased ||
+            isFirst ||
+            !Game.Instance.TurnController.TbActive) {
+            return;
+        }
+
+        Main.LogInfo(
+            $"Combat round ended:\n" +
             $"  CombatRound: {Game.Instance.TurnController.CombatRound}");
     }
 
