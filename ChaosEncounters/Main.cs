@@ -1,5 +1,6 @@
 ﻿using ChaosEncounters.Combat;
 using ChaosEncounters.Logging;
+using ChaosEncounters.UI;
 using UnityModManagerNet;
 
 namespace ChaosEncounters;
@@ -13,6 +14,7 @@ public static class Main {
         LogInfo("General logger initialized.");
         modEntry.OnGUI = OnGUI;
         CombatStartProbe.Initialize();
+        SurfaceHudHierarchyProbe.Initialize();
         LogInfo("Chaos Encounters loaded successfully.");
         return true;
     }
