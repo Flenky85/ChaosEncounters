@@ -6,6 +6,7 @@ using Kingmaker.Controllers.TurnBased;
 using Kingmaker.EntitySystem.Entities;
 using Kingmaker.PubSubSystem;
 using Kingmaker.PubSubSystem.Core;
+using ChaosEncounters.UI;
 
 namespace ChaosEncounters.Combat;
 
@@ -127,6 +128,8 @@ internal sealed class CombatStartProbe :
     }
 
     public void HandlePartyCombatStateChanged(bool inCombat) {
+        SurfaceHudIndicatorController.HandleCombatStateChanged(inCombat);
+
         if (!inCombat) {
             Main.LogInfo("Combat ended.");
             return;

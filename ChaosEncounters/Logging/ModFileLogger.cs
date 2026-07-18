@@ -5,7 +5,6 @@ namespace ChaosEncounters.Logging;
 
 internal static class ModFileLogger {
     private static string LogPath;
-    private static string SurfaceHudLogPath;
     private static UnityModManager.ModEntry.ModLogger UnityLogger;
 
     internal static void Initialize(string modDirectory, string modVersion, UnityModManager.ModEntry.ModLogger unityLogger) {
@@ -28,14 +27,6 @@ internal static class ModFileLogger {
             UnityLogger.Error($"Failed to initialize General.log: {exception}");
         }
 
-        try {
-            Directory.CreateDirectory(logsDirectory);
-            SurfaceHudLogPath = Path.Combine(logsDirectory, "SurfaceHud.log");
-            File.WriteAllText(SurfaceHudLogPath, header, Encoding.UTF8);
-        } catch (Exception exception) {
-            SurfaceHudLogPath = null;
-            UnityLogger.Error($"Failed to initialize SurfaceHud.log: {exception}");
-        }
     }
 
     internal static void Info(string message) {
@@ -44,21 +35,6 @@ internal static class ModFileLogger {
 
     internal static void Error(string message) {
         Write("ERROR", message);
-    }
-
-    internal static bool WriteSurfaceHudBlock(string message) {
-        if (SurfaceHudLogPath == null) {
-            return false;
-        }
-
-        try {
-            File.AppendAllText(SurfaceHudLogPath, message + Environment.NewLine, Encoding.UTF8);
-            return true;
-        } catch (Exception exception) {
-            SurfaceHudLogPath = null;
-            UnityLogger.Error($"Failed to write to SurfaceHud.log: {exception}");
-            return false;
-        }
     }
 
     private static void Write(string level, string message) {

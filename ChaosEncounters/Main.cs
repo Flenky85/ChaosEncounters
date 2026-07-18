@@ -14,7 +14,7 @@ public static class Main {
         LogInfo("General logger initialized.");
         modEntry.OnGUI = OnGUI;
         CombatStartProbe.Initialize();
-        SurfaceHudHierarchyProbe.Initialize();
+        SurfaceHudIndicator.Initialize();
         LogInfo("Chaos Encounters loaded successfully.");
         return true;
     }
@@ -22,6 +22,16 @@ public static class Main {
     internal static void LogInfo(string message) {
         ModFileLogger.Info(message);
         Log.Log(message);
+    }
+
+    internal static void LogWarning(string message) {
+        ModFileLogger.Info($"WARNING: {message}");
+        Log.Warning(message);
+    }
+
+    internal static void LogError(string message) {
+        ModFileLogger.Error(message);
+        Log.Error(message);
     }
 
     public static void OnGUI(UnityModManager.ModEntry modEntry) {
