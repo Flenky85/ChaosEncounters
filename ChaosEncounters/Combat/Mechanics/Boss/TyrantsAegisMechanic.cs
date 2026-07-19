@@ -1,5 +1,6 @@
 using ChaosEncounters.UI;
 using Kingmaker.EntitySystem.Entities;
+using UnityEngine;
 
 namespace ChaosEncounters.Combat.Mechanics.Boss;
 
@@ -9,8 +10,13 @@ internal sealed class TyrantsAegisMechanic :
     private const string HudTitle = "Tyrant's Aegis";
     private const string HudDescription =
         "All other enemies are immune to damage while the Boss remains alive. Kill the Boss to break their protection.";
-    private const string BossMarker = "BOSS";
-    private const string InvulnerableMarker = "INVUL";
+    private const string BossMarker = "Boss";
+    private const string InvulnerableMarker = "Invul";
+
+    private static readonly Color32 BossMarkerColor =
+        new(196, 54, 54, 255);
+    private static readonly Color32 InvulnerableMarkerColor =
+        new(160, 160, 160, 255);
 
     private EncounterSession ActiveSession;
     private BaseUnitEntity Boss;
@@ -64,7 +70,10 @@ internal sealed class TyrantsAegisMechanic :
              index++) {
             BaseUnitEntity enemy = session.InitialEnemies[index];
             if (ReferenceEquals(enemy, leader)) {
-                UnitMarker.SetMarker(enemy, BossMarker);
+                UnitMarker.SetMarker(
+                    enemy,
+                    BossMarker,
+                    BossMarkerColor);
                 continue;
             }
 
@@ -73,7 +82,8 @@ internal sealed class TyrantsAegisMechanic :
                 DamagePolicy.Immunity);
             UnitMarker.SetMarker(
                 enemy,
-                InvulnerableMarker);
+                InvulnerableMarker,
+                InvulnerableMarkerColor);
             protectedEnemyCount++;
         }
 

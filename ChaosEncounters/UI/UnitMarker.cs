@@ -15,7 +15,7 @@ internal static class UnitMarker {
     private const string HarmonyId = "ChaosEncounters.UnitMarker";
 
     private static readonly UnitReferenceComparer UnitComparer = new();
-    private static readonly Dictionary<BaseUnitEntity, string> MarkerTexts =
+    private static readonly Dictionary<BaseUnitEntity, MarkerState> MarkerStates =
         new(UnitComparer);
     private static readonly Dictionary<BaseUnitEntity, OvertipUnitPCView> ActiveViews =
         new(UnitComparer);
@@ -35,6 +35,16 @@ internal static class UnitMarker {
     }
 
     internal static void SetMarker(BaseUnitEntity unit, string text) {
+        SetMarker(
+            unit,
+            text,
+            new Color32(255, 255, 255, 255));
+    }
+
+    internal static void SetMarker(
+        BaseUnitEntity unit,
+        string text,
+        Color32 color) {
         if (!IsSupportedUnit(unit)) {
             return;
         }
@@ -42,14 +52,25 @@ internal static class UnitMarker {
             ClearMarker(unit);
             return;
         }
-        if (MarkerTexts.TryGetValue(unit, out string currentText) &&
-            string.Equals(currentText, text, StringComparison.Ordinal)) {
+        if (MarkerStates.TryGetValue(
+                unit,
+                out MarkerState currentState) &&
+            string.Equals(
+                currentState.Text,
+                text,
+                StringComparison.Ordinal) &&
+            AreColorsEqual(currentState.Color, color)) {
             return;
         }
 
-        MarkerTexts[unit] = text;
+        var state = new MarkerState(text, color);
+        MarkerStates[unit] = state;
         if (ActiveViews.TryGetValue(unit, out OvertipUnitPCView view)) {
-            ShowMarker(unit, view, text);
+            ShowMarker(
+                unit,
+                view,
+                state.Text,
+                state.Color);
         }
     }
 
@@ -58,18 +79,18 @@ internal static class UnitMarker {
             return;
         }
 
-        MarkerTexts.Remove(unit);
+        MarkerStates.Remove(unit);
         if (ActiveViews.TryGetValue(unit, out OvertipUnitPCView view)) {
             HideMarker(unit, view);
         }
     }
 
     internal static void ClearAllMarkers() {
-        if (MarkerTexts.Count == 0) {
+        if (MarkerStates.Count == 0) {
             return;
         }
 
-        MarkerTexts.Clear();
+        MarkerStates.Clear();
         foreach (KeyValuePair<BaseUnitEntity, OvertipUnitPCView> binding in ActiveViews) {
             try {
                 UnitMarkerHost host =
@@ -117,8 +138,13 @@ internal static class UnitMarker {
 
         host.Bind(unit);
         ActiveViews[unit] = pcView;
-        if (MarkerTexts.TryGetValue(unit, out string text)) {
-            host.ShowMarker(pcView, text);
+        if (MarkerStates.TryGetValue(
+                unit,
+                out MarkerState state)) {
+            host.ShowMarker(
+                pcView,
+                state.Text,
+                state.Color);
         }
     }
 
@@ -162,7 +188,8 @@ internal static class UnitMarker {
     private static void ShowMarker(
         BaseUnitEntity unit,
         OvertipUnitPCView view,
-        string text) {
+        string text,
+        Color32 color) {
         try {
             UnitMarkerHost host = view?.GetComponent<UnitMarkerHost>();
             if (host == null ||
@@ -171,7 +198,10 @@ internal static class UnitMarker {
                 return;
             }
 
-            host.ShowMarker(view, text);
+            host.ShowMarker(
+                view,
+                text,
+                color);
         } catch (Exception exception) {
             RemoveActiveView(unit, view);
             try {
@@ -242,6 +272,27 @@ internal static class UnitMarker {
             $"Unit marker presentation failed during {operation}: {exception}");
     }
 
+    private static bool AreColorsEqual(
+        Color32 left,
+        Color32 right) {
+        return left.r == right.r &&
+               left.g == right.g &&
+               left.b == right.b &&
+               left.a == right.a;
+    }
+
+    private readonly struct MarkerState {
+        internal string Text { get; }
+        internal Color32 Color { get; }
+
+        internal MarkerState(
+            string text,
+            Color32 color) {
+            Text = text;
+            Color = color;
+        }
+    }
+
     private sealed class UnitReferenceComparer :
         IEqualityComparer<BaseUnitEntity> {
         public bool Equals(BaseUnitEntity x, BaseUnitEntity y) {
@@ -269,7 +320,10 @@ internal sealed class UnitMarkerHost : MonoBehaviour {
         BoundUnit = unit;
     }
 
-    internal void ShowMarker(OvertipUnitPCView view, string text) {
+    internal void ShowMarker(
+        OvertipUnitPCView view,
+        string text,
+        Color32 color) {
         if (!EnsureCreated(view)) {
             HideMarker();
             return;
@@ -278,6 +332,7 @@ internal sealed class UnitMarkerHost : MonoBehaviour {
         if (!string.Equals(Marker.text, text, StringComparison.Ordinal)) {
             Marker.text = text;
         }
+        Marker.color = color;
         Marker.gameObject.SetActive(true);
     }
 
@@ -337,7 +392,6 @@ internal sealed class UnitMarkerHost : MonoBehaviour {
         Marker.fontSize = MarkerFontSize;
         Marker.enableAutoSizing = false;
         Marker.alignment = TextAlignmentOptions.Center;
-        Marker.color = Color.white;
         Marker.raycastTarget = false;
         Marker.text = string.Empty;
         markerObject.SetActive(false);
