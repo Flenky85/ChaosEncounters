@@ -4,17 +4,13 @@ using Kingmaker.EntitySystem.Entities;
 namespace ChaosEncounters.Combat.Mechanics;
 
 internal static class EncounterMechanicController {
-    private static readonly System.Random SelectionRandom = new();
+    private static System.Random SelectionRandom;
 
-    private static readonly IEncounterMechanic[] CommonMechanics = {
-        new LifecycleProbeMechanic("CommonLifecycleProbeA"),
-        new LifecycleProbeMechanic("CommonLifecycleProbeB")
-    };
+    private static readonly IEncounterMechanic[] CommonMechanics =
+        Array.Empty<IEncounterMechanic>();
 
-    private static readonly IEncounterMechanic[] BossMechanics = {
-        new LifecycleProbeMechanic("BossLifecycleProbeA"),
-        new LifecycleProbeMechanic("BossLifecycleProbeB")
-    };
+    private static readonly IEncounterMechanic[] BossMechanics =
+        Array.Empty<IEncounterMechanic>();
 
     private static EncounterSession ActiveSession;
     private static IEncounterMechanic ActiveMechanic;
@@ -49,8 +45,13 @@ internal static class EncounterMechanicController {
             return;
         }
 
-        int selectedIndex =
-            SelectionRandom.Next(candidates.Length);
+        System.Random random = SelectionRandom;
+        if (random == null) {
+            random = new System.Random();
+            SelectionRandom = random;
+        }
+
+        int selectedIndex = random.Next(candidates.Length);
         IEncounterMechanic selectedMechanic =
             candidates[selectedIndex];
         if (selectedMechanic == null) {
@@ -60,11 +61,10 @@ internal static class EncounterMechanicController {
 
         ActiveMechanic = selectedMechanic;
         Main.LogInfo(
-            $"Encounter mechanic selected:\n" +
-            $"  EncounterType: {session.Type}\n" +
-            $"  CandidateCount: {candidates.Length}\n" +
-            $"  SelectedIndex: {selectedIndex}\n" +
-            $"  SelectedMechanicId: {selectedMechanic.Id}");
+            $"Encounter mechanic selected: EncounterType={session.Type} " +
+            $"CandidateCount={candidates.Length} " +
+            $"SelectedIndex={selectedIndex} " +
+            $"SelectedMechanicId={selectedMechanic.Id}");
         selectedMechanic.Activate(session);
     }
 

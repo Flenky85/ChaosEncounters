@@ -65,6 +65,10 @@ internal static class UnitMarker {
     }
 
     internal static void ClearAllMarkers() {
+        if (MarkerTexts.Count == 0) {
+            return;
+        }
+
         MarkerTexts.Clear();
         foreach (KeyValuePair<BaseUnitEntity, OvertipUnitPCView> binding in ActiveViews) {
             try {
