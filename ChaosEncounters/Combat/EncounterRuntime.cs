@@ -480,6 +480,7 @@ internal sealed class EncounterRuntime :
     }
 
     private static void FaultRuntime(string callbackName, Exception exception) {
+        DamageControl.ClearAllPolicies();
         bool hadSession = CurrentSession != null;
         CurrentSession = null;
         SessionActivated = false;
@@ -496,6 +497,7 @@ internal sealed class EncounterRuntime :
     }
 
     private static void ClearRuntimeState() {
+        DamageControl.ClearAllPolicies();
         bool hadSession = CurrentSession != null;
         CurrentSession = null;
         SessionActivated = false;

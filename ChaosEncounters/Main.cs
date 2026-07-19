@@ -14,7 +14,7 @@ public static class Main {
         LogInfo("General logger initialized.");
         modEntry.OnGUI = OnGUI;
         EncounterRuntime.Initialize();
-        DamageControlPrototype.Initialize();
+        DamageControl.Initialize();
         HitPointRestoration.Initialize();
         SurfaceHudIndicator.Initialize();
         UnitOvertipNumberPrototype.Initialize();
