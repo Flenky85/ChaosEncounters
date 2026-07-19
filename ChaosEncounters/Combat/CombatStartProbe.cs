@@ -18,6 +18,8 @@ internal sealed class CombatStartProbe :
     ITurnEndHandler,
     IUnitDieHandler {
     private static readonly CombatStartProbe Instance = new();
+    private static EncounterSession CurrentSession;
+    private static bool DuplicateStartWarningLogged;
 
     internal static void Initialize() {
         if (!EventBus.IsGloballySubscribed(Instance)) {
@@ -131,7 +133,20 @@ internal sealed class CombatStartProbe :
         SurfaceHudIndicatorController.HandleCombatStateChanged(inCombat);
 
         if (!inCombat) {
+            if (CurrentSession != null) {
+                Main.LogInfo("Initial immutable encounter diagnostic session ended and was cleared.");
+                CurrentSession = null;
+            }
+            DuplicateStartWarningLogged = false;
             Main.LogInfo("Combat ended.");
+            return;
+        }
+
+        if (CurrentSession != null) {
+            if (!DuplicateStartWarningLogged) {
+                Main.LogWarning("Combat-start callback was received while an encounter diagnostic session already exists; the initial immutable session was preserved.");
+                DuplicateStartWarningLogged = true;
+            }
             return;
         }
 
@@ -168,6 +183,7 @@ internal sealed class CombatStartProbe :
         int chapterBossCount = 0;
         int enemiesWithoutArmyCount = 0;
         int totalNativeEnemyWeight = 0;
+        var initialEnemies = new List<BaseUnitEntity>();
         unitDataAndCalculationTicks += Stopwatch.GetTimestamp() - phaseStarted;
 
         long loopStringConstructionTicks = stringConstructionTicks;
@@ -214,6 +230,7 @@ internal sealed class CombatStartProbe :
 
             int nativeWeight = 0;
             if (unit.IsPlayerEnemy) {
+                initialEnemies.Add(unit);
                 switch (unit.Blueprint.DifficultyType) {
                     case UnitDifficultyType.Swarm:
                         swarmCount++;
@@ -284,6 +301,40 @@ internal sealed class CombatStartProbe :
             Stopwatch.GetTimestamp() - phaseStarted -
             (stringConstructionTicks - loopStringConstructionTicks) -
             (loggerCallTicks - loopLoggerCallTicks);
+
+        phaseStarted = Stopwatch.GetTimestamp();
+        EncounterClassifier.Classify(
+            initialEnemies,
+            out EncounterType encounterType,
+            out BaseUnitEntity leader,
+            out UnitDifficultyType? highestRank,
+            out int highestRankTieCount,
+            out string invalidCompositionReason);
+        CurrentSession = new EncounterSession(initialEnemies, encounterType, leader);
+        string leaderName = leader?.CharacterName ?? "None";
+        string leaderBlueprint = leader?.Blueprint?.name ?? "None";
+        string leaderRank = leader == null ? "None" : highestRank.Value.ToString();
+        string highestRankText = highestRank?.ToString() ?? "None";
+        string invalidCompositionReasonText = invalidCompositionReason ?? "None";
+        unitDataAndCalculationTicks += Stopwatch.GetTimestamp() - phaseStarted;
+
+        phaseStarted = Stopwatch.GetTimestamp();
+        string classificationDiagnostic =
+            $"Initial immutable encounter classification:\n" +
+            $"  EncounterType: {CurrentSession.Type}\n" +
+            $"  InitialEnemyCount: {CurrentSession.InitialEnemies.Count}\n" +
+            $"  HighestRank: {highestRankText}\n" +
+            $"  HighestRankTieCount: {highestRankTieCount}\n" +
+            $"  LeaderName: {leaderName}\n" +
+            $"  LeaderBlueprint: {leaderBlueprint}\n" +
+            $"  LeaderRank: {leaderRank}\n" +
+            $"  InvalidCompositionReason: {invalidCompositionReasonText}\n" +
+            $"  Scope: Initial enemy snapshot; classification and leader are immutable for this combat.";
+        stringConstructionTicks += Stopwatch.GetTimestamp() - phaseStarted;
+
+        phaseStarted = Stopwatch.GetTimestamp();
+        Main.LogInfo(classificationDiagnostic);
+        loggerCallTicks += Stopwatch.GetTimestamp() - phaseStarted;
 
         phaseStarted = Stopwatch.GetTimestamp();
         string combatUnitSummary = $"Combat units: {combatUnitCount}";
