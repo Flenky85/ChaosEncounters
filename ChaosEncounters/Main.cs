@@ -16,7 +16,7 @@ public static class Main {
         EncounterRuntime.Initialize();
         DamageControl.Initialize();
         HitPointRestoration.Initialize();
-        SurfaceHudIndicator.Initialize();
+        EncounterHud.Initialize();
         UnitMarker.Initialize();
         LogInfo("Chaos Encounters loaded successfully.");
         return true;

@@ -208,8 +208,6 @@ internal sealed class EncounterRuntime :
             DuplicateStartWarningLogged = false;
             RuntimeFaulted = false;
             RuntimeFaultLogged = false;
-            SurfaceHudIndicatorController.HandleCombatStateChanged(inCombat);
-
         var stopwatch = Stopwatch.StartNew();
         long unitDataAndCalculationTicks = 0;
         long stringConstructionTicks = 0;
@@ -470,7 +468,6 @@ internal sealed class EncounterRuntime :
 
     private static void HandleCombatEnd() {
         try {
-            SurfaceHudIndicatorController.HandleCombatStateChanged(inCombat: false);
             Main.LogInfo("Combat ended.");
         } catch (Exception exception) {
             FaultRuntime($"{nameof(HandlePartyCombatStateChanged)}(false)", exception);
@@ -482,6 +479,7 @@ internal sealed class EncounterRuntime :
     private static void FaultRuntime(string callbackName, Exception exception) {
         DamageControl.ClearAllPolicies();
         UnitMarker.ClearAllMarkers();
+        EncounterHud.Hide();
         bool hadSession = CurrentSession != null;
         CurrentSession = null;
         SessionActivated = false;
@@ -500,6 +498,7 @@ internal sealed class EncounterRuntime :
     private static void ClearRuntimeState() {
         DamageControl.ClearAllPolicies();
         UnitMarker.ClearAllMarkers();
+        EncounterHud.Hide();
         bool hadSession = CurrentSession != null;
         CurrentSession = null;
         SessionActivated = false;
