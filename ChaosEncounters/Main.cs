@@ -14,6 +14,7 @@ public static class Main {
         LogInfo("General logger initialized.");
         modEntry.OnGUI = OnGUI;
         CombatStartProbe.Initialize();
+        DamageControlPrototype.Initialize();
         SurfaceHudIndicator.Initialize();
         UnitOvertipNumberPrototype.Initialize();
         LogInfo("Chaos Encounters loaded successfully.");
