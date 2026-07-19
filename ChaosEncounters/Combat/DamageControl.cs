@@ -29,7 +29,6 @@ internal static class DamageControl {
         new Harmony(HarmonyId)
             .CreateClassProcessor(typeof(RuleRollDamageOnTriggerPatch))
             .Patch();
-        DamageControlRuntimeValidation.Initialize();
         Initialized = true;
     }
 
@@ -62,15 +61,6 @@ internal static class DamageControl {
 
     internal static void ClearAllPolicies() {
         Policies.Clear();
-    }
-
-    // Temporary support for the Point 4B runtime-validation harness.
-    internal static bool HasPolicyForValidation(
-        BaseUnitEntity unit,
-        DamagePolicy expectedPolicy) {
-        return unit != null &&
-               Policies.TryGetValue(unit, out DamagePolicy policy) &&
-               policy == expectedPolicy;
     }
 
     private static void HandleCompletedDamageRoll(RuleRollDamage rule) {
@@ -109,14 +99,7 @@ internal static class DamageControl {
         } catch (Exception exception) {
             Policies.Clear();
             Main.LogError($"Damage-control policy processing failed; all policies were cleared: {exception}");
-            return;
         }
-
-        DamageControlRuntimeValidation.RecordRollPolicy(
-            targetUnit,
-            policy,
-            originalDamage,
-            rule.ResultValue);
     }
 
     private static void ApplyPreventDeath(
