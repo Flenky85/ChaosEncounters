@@ -17,7 +17,7 @@ public static class Main {
         DamageControl.Initialize();
         HitPointRestoration.Initialize();
         SurfaceHudIndicator.Initialize();
-        UnitOvertipNumberPrototype.Initialize();
+        UnitMarker.Initialize();
         LogInfo("Chaos Encounters loaded successfully.");
         return true;
     }
