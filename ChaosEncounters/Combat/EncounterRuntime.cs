@@ -49,6 +49,13 @@ internal sealed class EncounterRuntime :
             if (!SessionActivated) {
                 SessionActivated = true;
                 ActivationCombatRound = combatRound;
+                if (game.CurrentMode != GameModeType.SpaceCombat &&
+                    game.CurrentMode != GameModeType.StarSystem) {
+                    DamageControlRuntimeValidation.Activate(
+                        game,
+                        CurrentSession,
+                        combatRound);
+                }
                 Main.LogInfo(
                     $"Encounter runtime session activated:\n" +
                     $"  CombatRound: {ActivationCombatRound}");
@@ -481,6 +488,7 @@ internal sealed class EncounterRuntime :
 
     private static void FaultRuntime(string callbackName, Exception exception) {
         DamageControl.ClearAllPolicies();
+        DamageControlRuntimeValidation.VerifyCleanupAndReset("RuntimeFault");
         bool hadSession = CurrentSession != null;
         CurrentSession = null;
         SessionActivated = false;
@@ -498,6 +506,7 @@ internal sealed class EncounterRuntime :
 
     private static void ClearRuntimeState() {
         DamageControl.ClearAllPolicies();
+        DamageControlRuntimeValidation.VerifyCleanupAndReset("CombatEnd");
         bool hadSession = CurrentSession != null;
         CurrentSession = null;
         SessionActivated = false;
