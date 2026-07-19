@@ -1,4 +1,5 @@
 using ChaosEncounters.UI;
+using ChaosEncounters.Combat.Mechanics.Boss;
 using Kingmaker.EntitySystem.Entities;
 
 namespace ChaosEncounters.Combat.Mechanics;
@@ -9,8 +10,9 @@ internal static class EncounterMechanicController {
     private static readonly IEncounterMechanic[] CommonMechanics =
         Array.Empty<IEncounterMechanic>();
 
-    private static readonly IEncounterMechanic[] BossMechanics =
-        Array.Empty<IEncounterMechanic>();
+    private static readonly IEncounterMechanic[] BossMechanics = {
+        new TyrantsAegisMechanic()
+    };
 
     private static EncounterSession ActiveSession;
     private static IEncounterMechanic ActiveMechanic;
@@ -45,13 +47,18 @@ internal static class EncounterMechanicController {
             return;
         }
 
-        System.Random random = SelectionRandom;
-        if (random == null) {
-            random = new System.Random();
-            SelectionRandom = random;
-        }
+        int selectedIndex;
+        if (candidates.Length == 1) {
+            selectedIndex = 0;
+        } else {
+            System.Random random = SelectionRandom;
+            if (random == null) {
+                random = new System.Random();
+                SelectionRandom = random;
+            }
 
-        int selectedIndex = random.Next(candidates.Length);
+            selectedIndex = random.Next(candidates.Length);
+        }
         IEncounterMechanic selectedMechanic =
             candidates[selectedIndex];
         if (selectedMechanic == null) {
