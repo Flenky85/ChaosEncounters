@@ -15,6 +15,7 @@ public static class Main {
         modEntry.OnGUI = OnGUI;
         CombatStartProbe.Initialize();
         SurfaceHudIndicator.Initialize();
+        UnitOvertipNumberPrototype.Initialize();
         LogInfo("Chaos Encounters loaded successfully.");
         return true;
     }
