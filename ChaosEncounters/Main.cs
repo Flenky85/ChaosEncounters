@@ -15,7 +15,7 @@ public static class Main {
         modEntry.OnGUI = OnGUI;
         EncounterRuntime.Initialize();
         DamageControlPrototype.Initialize();
-        RoundEndHealingPrototype.Initialize();
+        HitPointRestoration.Initialize();
         SurfaceHudIndicator.Initialize();
         UnitOvertipNumberPrototype.Initialize();
         LogInfo("Chaos Encounters loaded successfully.");

@@ -83,7 +83,6 @@ internal sealed class EncounterRuntime :
             Main.LogInfo(
                 $"Encounter runtime valid round end dispatched:\n" +
                 $"  CombatRound: {combatRound}");
-            RoundEndHealingPrototype.Instance.HandleRoundEnd(isTurnBased, isFirst);
         } catch (Exception exception) {
             FaultRuntime(nameof(HandleRoundEnd), exception);
         }
