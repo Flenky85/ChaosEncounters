@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using ChaosEncounters.Combat.Mechanics;
+using ChaosEncounters.UI;
 using Kingmaker;
 using Kingmaker.Blueprints.Classes.Experience;
 using Kingmaker.Controllers.TurnBased;
@@ -7,7 +9,6 @@ using Kingmaker.EntitySystem.Entities;
 using Kingmaker.GameModes;
 using Kingmaker.PubSubSystem;
 using Kingmaker.PubSubSystem.Core;
-using ChaosEncounters.UI;
 
 namespace ChaosEncounters.Combat;
 
@@ -41,7 +42,9 @@ internal sealed class EncounterRuntime :
 
         try {
             Game game = Game.Instance;
-            if (game?.TurnController?.TbActive != true) {
+            if (game?.TurnController?.TbActive != true ||
+                game.CurrentMode == GameModeType.SpaceCombat ||
+                game.CurrentMode == GameModeType.StarSystem) {
                 return;
             }
 
@@ -52,8 +55,12 @@ internal sealed class EncounterRuntime :
                 Main.LogInfo(
                     $"Encounter runtime session activated:\n" +
                     $"  CombatRound: {ActivationCombatRound}");
+                EncounterMechanicController.Activate(
+                    CurrentSession);
             }
 
+            EncounterMechanicController.HandleRoundStart(
+                combatRound);
             Main.LogInfo(
                 $"Combat round started:\n" +
                 $"  CombatRound: {combatRound}");
@@ -80,6 +87,8 @@ internal sealed class EncounterRuntime :
             }
 
             int combatRound = game.TurnController.CombatRound;
+            EncounterMechanicController.HandleRoundEnd(
+                combatRound);
             Main.LogInfo(
                 $"Encounter runtime valid round end dispatched:\n" +
                 $"  CombatRound: {combatRound}");
@@ -98,26 +107,44 @@ internal sealed class EncounterRuntime :
             return;
         }
 
-        var player = Game.Instance.Player;
-        bool isMainCharacter = unit == player.MainCharacterEntity;
-        bool isPlayerCharacter = player.Party.Contains(unit);
-        bool isPlayerPet =
-            !isPlayerCharacter &&
-            unit.IsPet &&
-            player.PartyAndPets.Contains(unit);
-        string role = GetUnitRole(unit, isMainCharacter, isPlayerCharacter, isPlayerPet);
-        string characterName = unit.CharacterName;
-        string blueprintName = unit.Blueprint.name;
+        try {
+            int combatRound =
+                Game.Instance.TurnController.CombatRound;
+            EncounterMechanicController.HandleUnitTurnStart(
+                unit,
+                combatRound);
 
-        Main.LogInfo(
-            $"Unit turn started:\n" +
-            $"  CombatRound: {Game.Instance.TurnController.CombatRound}\n" +
-            $"  Name: {characterName}\n" +
-            $"  Role: {role}\n" +
-            $"  Blueprint: {blueprintName}\n" +
-            $"  PlayerFaction: {unit.IsPlayerFaction}\n" +
-            $"  PlayerEnemy: {unit.IsPlayerEnemy}\n" +
-            $"  InCombat: {unit.IsInCombat}");
+            var player = Game.Instance.Player;
+            bool isMainCharacter =
+                unit == player.MainCharacterEntity;
+            bool isPlayerCharacter =
+                player.Party.Contains(unit);
+            bool isPlayerPet =
+                !isPlayerCharacter &&
+                unit.IsPet &&
+                player.PartyAndPets.Contains(unit);
+            string role = GetUnitRole(
+                unit,
+                isMainCharacter,
+                isPlayerCharacter,
+                isPlayerPet);
+            string characterName = unit.CharacterName;
+            string blueprintName = unit.Blueprint.name;
+
+            Main.LogInfo(
+                $"Unit turn started:\n" +
+                $"  CombatRound: {combatRound}\n" +
+                $"  Name: {characterName}\n" +
+                $"  Role: {role}\n" +
+                $"  Blueprint: {blueprintName}\n" +
+                $"  PlayerFaction: {unit.IsPlayerFaction}\n" +
+                $"  PlayerEnemy: {unit.IsPlayerEnemy}\n" +
+                $"  InCombat: {unit.IsInCombat}");
+        } catch (Exception exception) {
+            FaultRuntime(
+                nameof(HandleUnitStartTurn),
+                exception);
+        }
     }
 
     public void HandleUnitEndTurn(bool isTurnBased) {
@@ -130,26 +157,44 @@ internal sealed class EncounterRuntime :
             return;
         }
 
-        var player = Game.Instance.Player;
-        bool isMainCharacter = unit == player.MainCharacterEntity;
-        bool isPlayerCharacter = player.Party.Contains(unit);
-        bool isPlayerPet =
-            !isPlayerCharacter &&
-            unit.IsPet &&
-            player.PartyAndPets.Contains(unit);
-        string role = GetUnitRole(unit, isMainCharacter, isPlayerCharacter, isPlayerPet);
-        string characterName = unit.CharacterName;
-        string blueprintName = unit.Blueprint.name;
+        try {
+            int combatRound =
+                Game.Instance.TurnController.CombatRound;
+            EncounterMechanicController.HandleUnitTurnEnd(
+                unit,
+                combatRound);
 
-        Main.LogInfo(
-            $"Unit turn ended:\n" +
-            $"  CombatRound: {Game.Instance.TurnController.CombatRound}\n" +
-            $"  Name: {characterName}\n" +
-            $"  Role: {role}\n" +
-            $"  Blueprint: {blueprintName}\n" +
-            $"  PlayerFaction: {unit.IsPlayerFaction}\n" +
-            $"  PlayerEnemy: {unit.IsPlayerEnemy}\n" +
-            $"  InCombat: {unit.IsInCombat}");
+            var player = Game.Instance.Player;
+            bool isMainCharacter =
+                unit == player.MainCharacterEntity;
+            bool isPlayerCharacter =
+                player.Party.Contains(unit);
+            bool isPlayerPet =
+                !isPlayerCharacter &&
+                unit.IsPet &&
+                player.PartyAndPets.Contains(unit);
+            string role = GetUnitRole(
+                unit,
+                isMainCharacter,
+                isPlayerCharacter,
+                isPlayerPet);
+            string characterName = unit.CharacterName;
+            string blueprintName = unit.Blueprint.name;
+
+            Main.LogInfo(
+                $"Unit turn ended:\n" +
+                $"  CombatRound: {combatRound}\n" +
+                $"  Name: {characterName}\n" +
+                $"  Role: {role}\n" +
+                $"  Blueprint: {blueprintName}\n" +
+                $"  PlayerFaction: {unit.IsPlayerFaction}\n" +
+                $"  PlayerEnemy: {unit.IsPlayerEnemy}\n" +
+                $"  InCombat: {unit.IsInCombat}");
+        } catch (Exception exception) {
+            FaultRuntime(
+                nameof(HandleUnitEndTurn),
+                exception);
+        }
     }
 
     public void OnUnitDie() {
@@ -167,12 +212,17 @@ internal sealed class EncounterRuntime :
                 return;
             }
 
+            int combatRound =
+                Game.Instance.TurnController.CombatRound;
+            EncounterMechanicController.HandleEnemyDeath(
+                unit,
+                combatRound);
             string characterName = unit.CharacterName;
             string blueprintName = unit.Blueprint.name;
 
             Main.LogInfo(
                 $"Encounter runtime enemy death dispatched:\n" +
-                $"  CombatRound: {Game.Instance.TurnController.CombatRound}\n" +
+                $"  CombatRound: {combatRound}\n" +
                 $"  Name: {characterName}\n" +
                 $"  Blueprint: {blueprintName}\n" +
                 $"  DifficultyType: {unit.Blueprint.DifficultyType}\n" +
@@ -477,9 +527,8 @@ internal sealed class EncounterRuntime :
     }
 
     private static void FaultRuntime(string callbackName, Exception exception) {
-        DamageControl.ClearAllPolicies();
-        UnitMarker.ClearAllMarkers();
-        EncounterHud.Hide();
+        EncounterMechanicController.Deactivate(
+            EncounterMechanicEndReason.RuntimeFault);
         bool hadSession = CurrentSession != null;
         CurrentSession = null;
         SessionActivated = false;
@@ -496,9 +545,8 @@ internal sealed class EncounterRuntime :
     }
 
     private static void ClearRuntimeState() {
-        DamageControl.ClearAllPolicies();
-        UnitMarker.ClearAllMarkers();
-        EncounterHud.Hide();
+        EncounterMechanicController.Deactivate(
+            EncounterMechanicEndReason.CombatEnded);
         bool hadSession = CurrentSession != null;
         CurrentSession = null;
         SessionActivated = false;
