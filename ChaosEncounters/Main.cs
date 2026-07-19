@@ -1,6 +1,7 @@
 ﻿using ChaosEncounters.Combat;
 using ChaosEncounters.Logging;
 using ChaosEncounters.UI;
+using UnityEngine;
 using UnityModManagerNet;
 
 namespace ChaosEncounters;
@@ -37,6 +38,8 @@ public static class Main {
     }
 
     public static void OnGUI(UnityModManager.ModEntry modEntry) {
-
+        if (GUILayout.Button("Capture unit marker snapshot")) {
+            UnitOvertipHierarchyProbe.CaptureMarkerSnapshot();
+        }
     }
 }
