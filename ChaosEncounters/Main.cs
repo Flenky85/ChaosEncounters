@@ -13,7 +13,7 @@ public static class Main {
         ModFileLogger.Initialize(modEntry.Path, modEntry.Info.Version, Log);
         LogInfo("General logger initialized.");
         modEntry.OnGUI = OnGUI;
-        CombatStartProbe.Initialize();
+        EncounterRuntime.Initialize();
         DamageControlPrototype.Initialize();
         RoundEndHealingPrototype.Initialize();
         SurfaceHudIndicator.Initialize();

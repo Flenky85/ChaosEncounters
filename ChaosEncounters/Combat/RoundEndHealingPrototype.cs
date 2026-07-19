@@ -15,7 +15,7 @@ namespace ChaosEncounters.Combat;
 
 internal sealed class RoundEndHealingPrototype : IRoundEndHandler {
     private const string HarmonyId = "ChaosEncounters.RoundEndHealingPrototype";
-    private static readonly RoundEndHealingPrototype Instance = new();
+    internal static readonly RoundEndHealingPrototype Instance = new();
     private static bool Initialized;
     private static bool RuntimeEnabled = true;
     private static RuleCalculateHeal ActiveCalculation;
@@ -27,9 +27,6 @@ internal sealed class RoundEndHealingPrototype : IRoundEndHandler {
 
         var harmony = new Harmony(HarmonyId);
         harmony.CreateClassProcessor(typeof(RuleCalculateHealOnTriggerPatch)).Patch();
-        if (!EventBus.IsGloballySubscribed(Instance)) {
-            EventBus.Subscribe(Instance);
-        }
         Initialized = true;
     }
 

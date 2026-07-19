@@ -4,22 +4,27 @@ using Kingmaker;
 using Kingmaker.Blueprints.Classes.Experience;
 using Kingmaker.Controllers.TurnBased;
 using Kingmaker.EntitySystem.Entities;
+using Kingmaker.GameModes;
 using Kingmaker.PubSubSystem;
 using Kingmaker.PubSubSystem.Core;
 using ChaosEncounters.UI;
 
 namespace ChaosEncounters.Combat;
 
-internal sealed class CombatStartProbe :
+internal sealed class EncounterRuntime :
     IPartyCombatHandler,
     IRoundStartHandler,
     IRoundEndHandler,
     ITurnStartHandler,
     ITurnEndHandler,
     IUnitDieHandler {
-    private static readonly CombatStartProbe Instance = new();
+    private static readonly EncounterRuntime Instance = new();
     private static EncounterSession CurrentSession;
+    private static bool SessionActivated;
+    private static int ActivationCombatRound;
     private static bool DuplicateStartWarningLogged;
+    private static bool RuntimeFaulted;
+    private static bool RuntimeFaultLogged;
 
     internal static void Initialize() {
         if (!EventBus.IsGloballySubscribed(Instance)) {
@@ -28,29 +33,67 @@ internal sealed class CombatStartProbe :
     }
 
     public void HandleRoundStart(bool isTurnBased) {
-        if (!isTurnBased || !Game.Instance.TurnController.TbActive) {
+        if (!isTurnBased ||
+            RuntimeFaulted ||
+            CurrentSession == null) {
             return;
         }
 
-        Main.LogInfo(
-            $"Combat round started:\n" +
-            $"  CombatRound: {Game.Instance.TurnController.CombatRound}");
+        try {
+            Game game = Game.Instance;
+            if (game?.TurnController?.TbActive != true) {
+                return;
+            }
+
+            int combatRound = game.TurnController.CombatRound;
+            if (!SessionActivated) {
+                SessionActivated = true;
+                ActivationCombatRound = combatRound;
+                Main.LogInfo(
+                    $"Encounter runtime session activated:\n" +
+                    $"  CombatRound: {ActivationCombatRound}");
+            }
+
+            Main.LogInfo(
+                $"Combat round started:\n" +
+                $"  CombatRound: {combatRound}");
+        } catch (Exception exception) {
+            FaultRuntime(nameof(HandleRoundStart), exception);
+        }
     }
 
     public void HandleRoundEnd(bool isTurnBased, bool isFirst) {
         if (!isTurnBased ||
             isFirst ||
-            !Game.Instance.TurnController.TbActive) {
+            RuntimeFaulted ||
+            CurrentSession == null ||
+            !SessionActivated) {
             return;
         }
 
-        Main.LogInfo(
-            $"Combat round ended:\n" +
-            $"  CombatRound: {Game.Instance.TurnController.CombatRound}");
+        try {
+            Game game = Game.Instance;
+            if (game?.TurnController?.TbActive != true ||
+                game.CurrentMode == GameModeType.SpaceCombat ||
+                game.CurrentMode == GameModeType.StarSystem) {
+                return;
+            }
+
+            int combatRound = game.TurnController.CombatRound;
+            Main.LogInfo(
+                $"Encounter runtime valid round end dispatched:\n" +
+                $"  CombatRound: {combatRound}");
+            RoundEndHealingPrototype.Instance.HandleRoundEnd(isTurnBased, isFirst);
+        } catch (Exception exception) {
+            FaultRuntime(nameof(HandleRoundEnd), exception);
+        }
     }
 
     public void HandleUnitStartTurn(bool isTurnBased) {
         if (!isTurnBased ||
+            RuntimeFaulted ||
+            CurrentSession == null ||
+            !SessionActivated ||
             EventInvokerExtensions.MechanicEntity is not BaseUnitEntity unit ||
             !unit.IsInCombat) {
             return;
@@ -80,6 +123,9 @@ internal sealed class CombatStartProbe :
 
     public void HandleUnitEndTurn(bool isTurnBased) {
         if (!isTurnBased ||
+            RuntimeFaulted ||
+            CurrentSession == null ||
+            !SessionActivated ||
             EventInvokerExtensions.MechanicEntity is not BaseUnitEntity unit ||
             !unit.IsInCombat) {
             return;
@@ -108,47 +154,62 @@ internal sealed class CombatStartProbe :
     }
 
     public void OnUnitDie() {
-        if (EventInvokerExtensions.AbstractUnitEntity is not BaseUnitEntity unit ||
-            !unit.IsInCombat ||
-            !unit.IsPlayerEnemy ||
-            !unit.LifeState.IsDead) {
+        if (RuntimeFaulted ||
+            CurrentSession == null ||
+            !SessionActivated) {
             return;
         }
 
-        string characterName = unit.CharacterName;
-        string blueprintName = unit.Blueprint.name;
+        try {
+            if (EventInvokerExtensions.AbstractUnitEntity is not BaseUnitEntity unit ||
+                !unit.IsInCombat ||
+                !unit.IsPlayerEnemy ||
+                !unit.LifeState.IsDead) {
+                return;
+            }
 
-        Main.LogInfo(
-            $"Enemy died:\n" +
-            $"  CombatRound: {Game.Instance.TurnController.CombatRound}\n" +
-            $"  Name: {characterName}\n" +
-            $"  Blueprint: {blueprintName}\n" +
-            $"  DifficultyType: {unit.Blueprint.DifficultyType}\n" +
-            $"  PlayerEnemy: {unit.IsPlayerEnemy}\n" +
-            $"  InCombat: {unit.IsInCombat}\n" +
-            $"  IsDead: {unit.LifeState.IsDead}");
+            string characterName = unit.CharacterName;
+            string blueprintName = unit.Blueprint.name;
+
+            Main.LogInfo(
+                $"Encounter runtime enemy death dispatched:\n" +
+                $"  CombatRound: {Game.Instance.TurnController.CombatRound}\n" +
+                $"  Name: {characterName}\n" +
+                $"  Blueprint: {blueprintName}\n" +
+                $"  DifficultyType: {unit.Blueprint.DifficultyType}\n" +
+                $"  PlayerEnemy: {unit.IsPlayerEnemy}\n" +
+                $"  InCombat: {unit.IsInCombat}\n" +
+                $"  IsDead: {unit.LifeState.IsDead}");
+        } catch (Exception exception) {
+            FaultRuntime(nameof(OnUnitDie), exception);
+        }
     }
 
     public void HandlePartyCombatStateChanged(bool inCombat) {
-        SurfaceHudIndicatorController.HandleCombatStateChanged(inCombat);
-
         if (!inCombat) {
-            if (CurrentSession != null) {
-                Main.LogInfo("Initial immutable encounter diagnostic session ended and was cleared.");
-                CurrentSession = null;
-            }
-            DuplicateStartWarningLogged = false;
-            Main.LogInfo("Combat ended.");
+            HandleCombatEnd();
             return;
         }
 
-        if (CurrentSession != null) {
-            if (!DuplicateStartWarningLogged) {
-                Main.LogWarning("Combat-start callback was received while an encounter diagnostic session already exists; the initial immutable session was preserved.");
-                DuplicateStartWarningLogged = true;
-            }
+        if (RuntimeFaulted) {
             return;
         }
+
+        try {
+            if (CurrentSession != null) {
+                if (!DuplicateStartWarningLogged) {
+                    Main.LogWarning("Combat-start callback was received while an encounter diagnostic session already exists; the initial immutable session was preserved.");
+                    DuplicateStartWarningLogged = true;
+                }
+                return;
+            }
+
+            SessionActivated = false;
+            ActivationCombatRound = 0;
+            DuplicateStartWarningLogged = false;
+            RuntimeFaulted = false;
+            RuntimeFaultLogged = false;
+            SurfaceHudIndicatorController.HandleCombatStateChanged(inCombat);
 
         var stopwatch = Stopwatch.StartNew();
         long unitDataAndCalculationTicks = 0;
@@ -311,6 +372,7 @@ internal sealed class CombatStartProbe :
             out int highestRankTieCount,
             out string invalidCompositionReason);
         CurrentSession = new EncounterSession(initialEnemies, encounterType, leader);
+        Main.LogInfo("Encounter runtime session created; activation is pending the first valid turn-based round start.");
         string leaderName = leader?.CharacterName ?? "None";
         string leaderBlueprint = leader?.Blueprint?.name ?? "None";
         string leaderRank = leader == null ? "None" : highestRank.Value.ToString();
@@ -402,6 +464,50 @@ internal sealed class CombatStartProbe :
             $"  Logger calls: {loggerCallMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms\n" +
             $"  Unclassified overhead: {unclassifiedOverheadMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms\n" +
             $"  Total: {totalMilliseconds.ToString("F3", CultureInfo.InvariantCulture)} ms");
+        } catch (Exception exception) {
+            FaultRuntime(nameof(HandlePartyCombatStateChanged), exception);
+        }
+    }
+
+    private static void HandleCombatEnd() {
+        try {
+            SurfaceHudIndicatorController.HandleCombatStateChanged(inCombat: false);
+            Main.LogInfo("Combat ended.");
+        } catch (Exception exception) {
+            FaultRuntime($"{nameof(HandlePartyCombatStateChanged)}(false)", exception);
+        } finally {
+            ClearRuntimeState();
+        }
+    }
+
+    private static void FaultRuntime(string callbackName, Exception exception) {
+        bool hadSession = CurrentSession != null;
+        CurrentSession = null;
+        SessionActivated = false;
+        ActivationCombatRound = 0;
+        RuntimeFaulted = true;
+
+        if (!RuntimeFaultLogged) {
+            RuntimeFaultLogged = true;
+            Main.LogError($"Encounter runtime faulted in {callbackName}: {exception}");
+        }
+        if (hadSession) {
+            Main.LogInfo("Encounter runtime session cleared after a runtime fault.");
+        }
+    }
+
+    private static void ClearRuntimeState() {
+        bool hadSession = CurrentSession != null;
+        CurrentSession = null;
+        SessionActivated = false;
+        ActivationCombatRound = 0;
+        DuplicateStartWarningLogged = false;
+        RuntimeFaulted = false;
+        RuntimeFaultLogged = false;
+
+        if (hadSession) {
+            Main.LogInfo("Encounter runtime session cleared at combat end.");
+        }
     }
 
     private static string GetUnitRole(
