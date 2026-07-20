@@ -1,3 +1,4 @@
+using ChaosEncounters.Configuration;
 using ChaosEncounters.UI;
 using ChaosEncounters.Combat.Mechanics.Boss;
 using ChaosEncounters.Combat.Mechanics.Common;
@@ -69,11 +70,16 @@ internal static class EncounterMechanicController {
         for (int index = 0; index < candidates.Length; index++) {
             IEncounterMechanic candidate = candidates[index];
             if (candidate != null &&
+                ModSettings.IsEncounterMechanicEnabled(
+                    candidate.Id) &&
                 candidate.CanActivate(session)) {
                 compatibleCandidateCount++;
             }
         }
         if (compatibleCandidateCount == 0) {
+            Main.LogInfo(
+                $"No enabled compatible encounter mechanic was available: " +
+                $"EncounterType={session.Type}");
             return;
         }
 
@@ -97,6 +103,8 @@ internal static class EncounterMechanicController {
         for (int index = 0; index < candidates.Length; index++) {
             IEncounterMechanic candidate = candidates[index];
             if (candidate == null ||
+                !ModSettings.IsEncounterMechanicEnabled(
+                    candidate.Id) ||
                 !candidate.CanActivate(session)) {
                 continue;
             }

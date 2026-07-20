@@ -1,5 +1,6 @@
 using ChaosEncounters.Combat;
 using ChaosEncounters.Combat.Mechanics;
+using ChaosEncounters.Configuration;
 using UnityEngine;
 
 namespace ChaosEncounters.UI;
@@ -19,9 +20,6 @@ internal static class ModMenu {
         "Common",
         "Boss"
     };
-
-    private static readonly Dictionary<IEncounterMechanic, bool>
-        PlaceholderEnabledStates = new();
 
     private static int SelectedTopLevelTab;
     private static int SelectedEncounterTab;
@@ -117,22 +115,17 @@ internal static class ModMenu {
                 continue;
             }
 
-            if (!PlaceholderEnabledStates.TryGetValue(
-                    mechanic,
-                    out bool placeholderEnabled)) {
-                placeholderEnabled = true;
-                PlaceholderEnabledStates.Add(
-                    mechanic,
-                    placeholderEnabled);
-            }
-
+            bool mechanicEnabled =
+                ModSettings.IsEncounterMechanicEnabled(
+                    mechanic.Id);
             GUILayout.BeginVertical(GUI.skin.box);
-            bool updatedPlaceholderEnabled = GUILayout.Toggle(
-                placeholderEnabled,
+            bool updatedMechanicEnabled = GUILayout.Toggle(
+                mechanicEnabled,
                 mechanic.DisplayName);
-            if (updatedPlaceholderEnabled != placeholderEnabled) {
-                PlaceholderEnabledStates[mechanic] =
-                    updatedPlaceholderEnabled;
+            if (updatedMechanicEnabled != mechanicEnabled) {
+                ModSettings.SetEncounterMechanicEnabled(
+                    mechanic.Id,
+                    updatedMechanicEnabled);
             }
             DrawWrappedLabel(mechanic.Description);
             GUILayout.EndVertical();

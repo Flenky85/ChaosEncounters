@@ -1,4 +1,5 @@
 ﻿using ChaosEncounters.Combat;
+using ChaosEncounters.Configuration;
 using ChaosEncounters.Logging;
 using ChaosEncounters.UI;
 using UnityModManagerNet;
@@ -12,6 +13,7 @@ public static class Main {
         Log = modEntry.Logger;
         ModFileLogger.Initialize(modEntry.Path, modEntry.Info.Version, Log);
         LogInfo("General logger initialized.");
+        ModSettings.Initialize(modEntry.Path);
         modEntry.OnGUI = OnGUI;
         EncounterRuntime.Initialize();
         DamageControl.Initialize();
