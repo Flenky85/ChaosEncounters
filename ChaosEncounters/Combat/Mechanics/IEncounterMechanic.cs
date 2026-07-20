@@ -29,6 +29,10 @@ internal interface IEncounterMechanic {
     void Deactivate(EncounterMechanicEndReason reason);
 }
 
+internal interface IEnemyJoinAwareMechanic {
+    void HandleEnemyJoined(BaseUnitEntity unit);
+}
+
 internal enum EncounterMechanicEndReason {
     CombatEnded,
     RuntimeFault,

@@ -161,7 +161,7 @@ internal sealed class EncounterRuntime :
             CurrentSession == null ||
             (SessionActivated &&
              !EncounterMechanicController
-                 .IsExecutionListActive) ||
+                 .HasEnemyJoinAwareMechanic) ||
             unit == null ||
             unit.IsDisposed ||
             unit.LifeState == null ||
@@ -174,7 +174,7 @@ internal sealed class EncounterRuntime :
         try {
             if (SessionActivated) {
                 EncounterMechanicController
-                    .HandleEnemyJoinCombat(unit);
+                    .HandleEnemyJoined(unit);
                 return;
             }
 
@@ -293,7 +293,7 @@ internal sealed class EncounterRuntime :
         PendingEnemyJoins = null;
         if (pendingEnemyJoins == null ||
             !EncounterMechanicController
-                .IsExecutionListActive) {
+                .HasEnemyJoinAwareMechanic) {
             return;
         }
 
@@ -301,7 +301,7 @@ internal sealed class EncounterRuntime :
              index < pendingEnemyJoins.Count;
              index++) {
             EncounterMechanicController
-                .HandleEnemyJoinCombat(
+                .HandleEnemyJoined(
                     pendingEnemyJoins[index]);
         }
     }

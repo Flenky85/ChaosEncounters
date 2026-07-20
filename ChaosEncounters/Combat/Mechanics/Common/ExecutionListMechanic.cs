@@ -6,7 +6,8 @@ using UnityEngine;
 namespace ChaosEncounters.Combat.Mechanics.Common;
 
 internal sealed class ExecutionListMechanic :
-    IEncounterMechanic {
+    IEncounterMechanic,
+    IEnemyJoinAwareMechanic {
     private const string MechanicId = "ExecutionList";
     private const string HudTitle = "The Execution List";
     private const string HudDescription =
@@ -140,7 +141,7 @@ internal sealed class ExecutionListMechanic :
         int combatRound) {
     }
 
-    internal void HandleEnemyJoinCombat(
+    public void HandleEnemyJoined(
         BaseUnitEntity unit) {
         if (OrderedEnemies == null ||
             unit == null ||

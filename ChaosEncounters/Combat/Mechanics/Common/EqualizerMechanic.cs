@@ -15,7 +15,8 @@ using UnityEngine;
 namespace ChaosEncounters.Combat.Mechanics.Common;
 
 internal sealed class EqualizerMechanic :
-    IEncounterMechanic {
+    IEncounterMechanic,
+    IEnemyJoinAwareMechanic {
     private const string MechanicId = "Equalizer";
     private const string HudTitle = "The Equalizer";
     private const string HudDescription =
@@ -27,6 +28,7 @@ internal sealed class EqualizerMechanic :
     private static bool HooksInstalled;
 
     private List<MemberState> Members;
+    private List<BaseUnitEntity> PendingReinforcements;
     private MemberState[] WorkBuffer;
     private long MaximumPool;
     private long CurrentPool;
@@ -169,30 +171,11 @@ internal sealed class EqualizerMechanic :
             return;
         }
 
-        Game game = Game.Instance;
-        if (game?.State == null) {
-            FailActive(
-                "The Equalizer could not inspect round-start reinforcements because game state was unavailable.",
-                null);
-            return;
-        }
-
-        bool rosterChanged = false;
         try {
-            foreach (BaseUnitEntity candidate in
-                game.State.AllBaseAwakeUnitsForSure) {
-                rosterChanged |= TryRegisterReinforcement(
-                    candidate);
-            }
-
-            if (rosterChanged && IsOperational) {
-                SynchronizeGroup(
-                    PoolChangeDirection.Healing,
-                    rosterChanged: true);
-            }
+            ProcessPendingReinforcements();
         } catch (Exception exception) {
             FailActive(
-                "The Equalizer failed while registering round-start reinforcements.",
+                "The Equalizer failed while processing round-start reinforcements.",
                 exception);
         }
     }
@@ -206,18 +189,50 @@ internal sealed class EqualizerMechanic :
         if (!IsOperational) {
             return;
         }
+        List<BaseUnitEntity> pendingReinforcements =
+            PendingReinforcements;
+        if (pendingReinforcements == null ||
+            pendingReinforcements.Count == 0) {
+            return;
+        }
 
         try {
-            if (TryRegisterReinforcement(unit)) {
-                SynchronizeGroup(
-                    PoolChangeDirection.Healing,
-                    rosterChanged: true);
-            }
+            ProcessPendingReinforcements();
         } catch (Exception exception) {
             FailActive(
-                "The Equalizer failed while registering a turn-start reinforcement.",
+                "The Equalizer failed while processing turn-start reinforcements.",
                 exception);
         }
+    }
+
+    public void HandleEnemyJoined(
+        BaseUnitEntity unit) {
+        if (!IsOperational ||
+            !IsPotentialReinforcement(unit) ||
+            FindMemberIndex(unit) >= 0) {
+            return;
+        }
+
+        List<BaseUnitEntity> pendingReinforcements =
+            PendingReinforcements;
+        if (pendingReinforcements != null) {
+            for (int index = 0;
+                 index < pendingReinforcements.Count;
+                 index++) {
+                if (ReferenceEquals(
+                        pendingReinforcements[index],
+                        unit)) {
+                    return;
+                }
+            }
+        } else {
+            pendingReinforcements =
+                new List<BaseUnitEntity>();
+            PendingReinforcements =
+                pendingReinforcements;
+        }
+
+        pendingReinforcements.Add(unit);
     }
 
     public void HandleUnitTurnEnd(
@@ -405,6 +420,36 @@ internal sealed class EqualizerMechanic :
         return true;
     }
 
+    private void ProcessPendingReinforcements() {
+        List<BaseUnitEntity> pendingReinforcements =
+            PendingReinforcements;
+        if (pendingReinforcements == null ||
+            pendingReinforcements.Count == 0) {
+            return;
+        }
+
+        PendingReinforcements = null;
+        bool rosterChanged = false;
+        for (int index = 0;
+             index < pendingReinforcements.Count;
+             index++) {
+            BaseUnitEntity candidate =
+                pendingReinforcements[index];
+            if (!IsPotentialReinforcement(candidate)) {
+                continue;
+            }
+
+            rosterChanged |= TryRegisterReinforcement(
+                candidate);
+        }
+
+        if (rosterChanged && IsOperational) {
+            SynchronizeGroup(
+                PoolChangeDirection.Healing,
+                rosterChanged: true);
+        }
+    }
+
     private int FindMemberIndex(BaseUnitEntity unit) {
         List<MemberState> members = Members;
         if (members == null || unit == null) {
@@ -446,6 +491,13 @@ internal sealed class EqualizerMechanic :
         RuleDealDamage rule) {
         if (!IsOperational || rule == null) {
             return;
+        }
+
+        if (PendingReinforcements != null) {
+            ProcessPendingReinforcements();
+            if (!IsOperational) {
+                return;
+            }
         }
 
         bool rosterChanged = false;
@@ -1222,6 +1274,7 @@ internal sealed class EqualizerMechanic :
         }
 
         Members = null;
+        PendingReinforcements = null;
         WorkBuffer = null;
         MaximumPool = 0;
         CurrentPool = 0;
