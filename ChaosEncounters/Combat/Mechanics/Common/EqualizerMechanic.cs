@@ -395,6 +395,7 @@ internal sealed class EqualizerMechanic :
             health,
             health.MaxHitPoints,
             NextRegistrationOrdinal);
+        member.PendingInitialEqualization = true;
         NextRegistrationOrdinal++;
         Members.Add(member);
         EnsureWorkBufferCapacity(Members.Count);
@@ -625,6 +626,10 @@ internal sealed class EqualizerMechanic :
         }
 
         VerifyInvariant();
+        if (rosterChanged &&
+            direction == PoolChangeDirection.Healing) {
+            ClearPendingInitialEqualization();
+        }
         UpdatePresentation(rosterChanged);
     }
 
@@ -647,7 +652,11 @@ internal sealed class EqualizerMechanic :
                 current = member.RegisteredMaximumHitPoints;
             }
 
-            if (direction == PoolChangeDirection.Damage) {
+            if (member.PendingInitialEqualization) {
+                member.AllocationLowerBound = 1;
+                member.AllocationUpperBound =
+                    member.RegisteredMaximumHitPoints;
+            } else if (direction == PoolChangeDirection.Damage) {
                 member.AllocationLowerBound = 1;
                 member.AllocationUpperBound = current;
             } else {
@@ -802,6 +811,14 @@ internal sealed class EqualizerMechanic :
             selected.PlannedHitPoints++;
             selected.RemainderAwarded = true;
             remainderPoints--;
+        }
+    }
+
+    private void ClearPendingInitialEqualization() {
+        for (int index = 0;
+             index < Members.Count;
+             index++) {
+            Members[index].PendingInitialEqualization = false;
         }
     }
 
@@ -1276,6 +1293,7 @@ internal sealed class EqualizerMechanic :
         internal long AllocationRemainder;
         internal bool AllocationActive;
         internal bool RemainderAwarded;
+        internal bool PendingInitialEqualization;
 
         internal MemberState(
             EqualizerMechanic owner,
