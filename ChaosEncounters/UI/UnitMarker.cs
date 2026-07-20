@@ -383,7 +383,7 @@ internal sealed class UnitMarkerHost : MonoBehaviour {
         markerRect.anchorMax = new Vector2(0.5f, 0f);
         markerRect.pivot = new Vector2(0.5f, 0f);
         markerRect.anchoredPosition = new Vector2(0f, 90f);
-        markerRect.sizeDelta = new Vector2(80f, 50f);
+        markerRect.sizeDelta = new Vector2(140f, 50f);
 
         Marker = markerObject.GetComponent<TextMeshProUGUI>();
         Marker.font = nativeText.font;
