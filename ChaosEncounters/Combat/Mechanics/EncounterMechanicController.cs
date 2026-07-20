@@ -11,7 +11,8 @@ internal static class EncounterMechanicController {
         Array.Empty<IEncounterMechanic>();
 
     private static readonly IEncounterMechanic[] BossMechanics = {
-        new TyrantsAegisMechanic()
+        new TyrantsAegisMechanic(),
+        new WallOfFleshMechanic()
     };
 
     private static EncounterSession ActiveSession;
