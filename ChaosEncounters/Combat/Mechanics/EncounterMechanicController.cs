@@ -12,7 +12,8 @@ internal static class EncounterMechanicController {
 
     private static readonly IEncounterMechanic[] BossMechanics = {
         new TyrantsAegisMechanic(),
-        new WallOfFleshMechanic()
+        new WallOfFleshMechanic(),
+        new EliteGuardMechanic()
     };
 
     private static EncounterSession ActiveSession;
@@ -44,13 +45,21 @@ internal static class EncounterMechanicController {
         }
 
         ActiveSession = session;
-        if (candidates.Length == 0) {
+        int compatibleCandidateCount = 0;
+        for (int index = 0; index < candidates.Length; index++) {
+            IEncounterMechanic candidate = candidates[index];
+            if (candidate != null &&
+                candidate.CanActivate(session)) {
+                compatibleCandidateCount++;
+            }
+        }
+        if (compatibleCandidateCount == 0) {
             return;
         }
 
-        int selectedIndex;
-        if (candidates.Length == 1) {
-            selectedIndex = 0;
+        int selectedCompatibleOrdinal;
+        if (compatibleCandidateCount == 1) {
+            selectedCompatibleOrdinal = 0;
         } else {
             System.Random random = SelectionRandom;
             if (random == null) {
@@ -58,19 +67,36 @@ internal static class EncounterMechanicController {
                 SelectionRandom = random;
             }
 
-            selectedIndex = random.Next(candidates.Length);
+            selectedCompatibleOrdinal =
+                random.Next(compatibleCandidateCount);
         }
-        IEncounterMechanic selectedMechanic =
-            candidates[selectedIndex];
-        if (selectedMechanic == null) {
+
+        int selectedIndex = -1;
+        IEncounterMechanic selectedMechanic = null;
+        int compatibleOrdinal = 0;
+        for (int index = 0; index < candidates.Length; index++) {
+            IEncounterMechanic candidate = candidates[index];
+            if (candidate == null ||
+                !candidate.CanActivate(session)) {
+                continue;
+            }
+            if (compatibleOrdinal == selectedCompatibleOrdinal) {
+                selectedIndex = index;
+                selectedMechanic = candidate;
+                break;
+            }
+
+            compatibleOrdinal++;
+        }
+        if (selectedMechanic == null || selectedIndex < 0) {
             throw new InvalidOperationException(
-                "The selected encounter mechanic candidate is null.");
+                "The selected compatible encounter mechanic could not be resolved.");
         }
 
         ActiveMechanic = selectedMechanic;
         Main.LogInfo(
             $"Encounter mechanic selected: EncounterType={session.Type} " +
-            $"CandidateCount={candidates.Length} " +
+            $"CandidateCount={compatibleCandidateCount} " +
             $"SelectedIndex={selectedIndex} " +
             $"SelectedMechanicId={selectedMechanic.Id}");
         selectedMechanic.Activate(session);

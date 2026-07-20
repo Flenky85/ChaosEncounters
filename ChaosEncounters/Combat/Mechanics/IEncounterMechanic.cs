@@ -5,6 +5,8 @@ namespace ChaosEncounters.Combat.Mechanics;
 internal interface IEncounterMechanic {
     string Id { get; }
 
+    bool CanActivate(EncounterSession session);
+
     void Activate(EncounterSession session);
 
     void HandleRoundStart(int combatRound);

@@ -18,6 +18,12 @@ internal sealed class TyrantsAegisMechanic :
 
     public string Id => MechanicId;
 
+    public bool CanActivate(EncounterSession session) {
+        return session != null &&
+               session.Type == EncounterType.Boss &&
+               session.Leader != null;
+    }
+
     public void Activate(EncounterSession session) {
         if (session == null) {
             throw new InvalidOperationException(
@@ -71,9 +77,9 @@ internal sealed class TyrantsAegisMechanic :
                 continue;
             }
 
-            DamageControl.SetPolicy(
+            DamageControl.SetIncomingDamageReduction(
                 enemy,
-                DamagePolicy.Immunity);
+                100);
             UnitMarker.SetMarker(
                 enemy,
                 InvulnerableMarker,

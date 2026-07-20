@@ -18,6 +18,12 @@ internal sealed class WallOfFleshMechanic :
 
     public string Id => MechanicId;
 
+    public bool CanActivate(EncounterSession session) {
+        return session != null &&
+               session.Type == EncounterType.Boss &&
+               session.Leader != null;
+    }
+
     public void Activate(EncounterSession session) {
         if (session == null) {
             throw new InvalidOperationException(
@@ -63,9 +69,9 @@ internal sealed class WallOfFleshMechanic :
         ProtectionActive = RemainingMinions > 0;
 
         if (ProtectionActive) {
-            DamageControl.SetPolicy(
+            DamageControl.SetIncomingDamageReduction(
                 Boss,
-                DamagePolicy.Immunity);
+                100);
         }
         UnitMarker.SetMarker(
             Boss,

@@ -6,18 +6,13 @@ using Kingmaker.EntitySystem.Entities;
 using Kingmaker.PubSubSystem.Core;
 using Kingmaker.RuleSystem.Rules.Damage;
 using Kingmaker.UnitLogic.Parts;
+using UnityEngine;
 
 namespace ChaosEncounters.Combat;
 
-internal enum DamagePolicy {
-    None,
-    Immunity,
-    PreventDeath
-}
-
 internal static class DamageControl {
     private const string HarmonyId = "ChaosEncounters.DamageControl";
-    private static readonly Dictionary<BaseUnitEntity, DamagePolicy> Policies =
+    private static readonly Dictionary<BaseUnitEntity, DamageAdjustment> Adjustments =
         new(UnitReferenceComparer.Instance);
     private static bool Initialized;
 
@@ -32,42 +27,135 @@ internal static class DamageControl {
         Initialized = true;
     }
 
-    internal static void SetPolicy(BaseUnitEntity unit, DamagePolicy policy) {
-        if (unit == null) {
+    internal static void SetIncomingDamageReduction(
+        BaseUnitEntity unit,
+        int percent) {
+        ValidatePercent(percent, nameof(percent));
+        if (percent == 0) {
+            ClearIncomingDamageReduction(unit);
+            return;
+        }
+        if (!IsSupportedUnit(unit)) {
             return;
         }
 
-        if (policy == DamagePolicy.None) {
-            ClearPolicy(unit);
+        Adjustments.TryGetValue(
+            unit,
+            out DamageAdjustment current);
+        SetAdjustment(
+            unit,
+            new DamageAdjustment(
+                percent,
+                current.OutgoingIncreasePercent,
+                current.PreventDeath));
+    }
+
+    internal static void ClearIncomingDamageReduction(
+        BaseUnitEntity unit) {
+        if (unit == null ||
+            !Adjustments.TryGetValue(
+                unit,
+                out DamageAdjustment current)) {
             return;
         }
 
-        if ((policy != DamagePolicy.Immunity &&
-             policy != DamagePolicy.PreventDeath) ||
-            unit is StarshipEntity ||
-            unit.IsDisposed ||
-            !unit.IsInGame) {
+        SetAdjustment(
+            unit,
+            new DamageAdjustment(
+                0,
+                current.OutgoingIncreasePercent,
+                current.PreventDeath));
+    }
+
+    internal static void SetOutgoingDamageIncrease(
+        BaseUnitEntity unit,
+        int percent) {
+        ValidatePercent(percent, nameof(percent));
+        if (percent == 0) {
+            ClearOutgoingDamageIncrease(unit);
+            return;
+        }
+        if (!IsSupportedUnit(unit)) {
             return;
         }
 
-        Policies[unit] = policy;
+        Adjustments.TryGetValue(
+            unit,
+            out DamageAdjustment current);
+        SetAdjustment(
+            unit,
+            new DamageAdjustment(
+                current.IncomingReductionPercent,
+                percent,
+                current.PreventDeath));
+    }
+
+    internal static void ClearOutgoingDamageIncrease(
+        BaseUnitEntity unit) {
+        if (unit == null ||
+            !Adjustments.TryGetValue(
+                unit,
+                out DamageAdjustment current)) {
+            return;
+        }
+
+        SetAdjustment(
+            unit,
+            new DamageAdjustment(
+                current.IncomingReductionPercent,
+                0,
+                current.PreventDeath));
+    }
+
+    internal static void SetPreventDeath(
+        BaseUnitEntity unit,
+        bool enabled) {
+        if (!enabled) {
+            if (unit == null ||
+                !Adjustments.TryGetValue(
+                    unit,
+                    out DamageAdjustment current)) {
+                return;
+            }
+
+            SetAdjustment(
+                unit,
+                new DamageAdjustment(
+                    current.IncomingReductionPercent,
+                    current.OutgoingIncreasePercent,
+                    false));
+            return;
+        }
+        if (!IsSupportedUnit(unit)) {
+            return;
+        }
+
+        Adjustments.TryGetValue(
+            unit,
+            out DamageAdjustment existing);
+        SetAdjustment(
+            unit,
+            new DamageAdjustment(
+                existing.IncomingReductionPercent,
+                existing.OutgoingIncreasePercent,
+                true));
     }
 
     internal static void ClearPolicy(BaseUnitEntity unit) {
         if (unit != null) {
-            Policies.Remove(unit);
+            Adjustments.Remove(unit);
         }
     }
 
     internal static void ClearAllPolicies() {
-        Policies.Clear();
+        Adjustments.Clear();
     }
 
-    private static void HandleCompletedDamageRoll(RuleRollDamage rule) {
-        if (Policies.Count == 0) {
+    private static void HandleCompletedDamageRoll(
+        RuleRollDamage rule) {
+        if (Adjustments.Count == 0) {
             return;
         }
-
         if (rule == null) {
             return;
         }
@@ -76,58 +164,130 @@ internal static class DamageControl {
         if (originalDamage <= 0) {
             return;
         }
-
-        if (rule.Target is not BaseUnitEntity targetUnit ||
+        if (rule.TargetUnit is not BaseUnitEntity targetUnit ||
             targetUnit is StarshipEntity) {
             return;
         }
 
-        if (!Policies.TryGetValue(targetUnit, out DamagePolicy policy)) {
-            return;
-        }
-
         try {
-            switch (policy) {
-                case DamagePolicy.Immunity:
-                    rule.ResultValue = 0;
-                    break;
-
-                case DamagePolicy.PreventDeath:
-                    ApplyPreventDeath(rule, targetUnit, originalDamage);
-                    break;
+            int outgoingIncreasePercent = 0;
+            if (rule.InitiatorUnit is BaseUnitEntity initiatorUnit &&
+                Adjustments.TryGetValue(
+                    initiatorUnit,
+                    out DamageAdjustment initiatorAdjustment)) {
+                outgoingIncreasePercent =
+                    initiatorAdjustment.OutgoingIncreasePercent;
             }
+
+            Adjustments.TryGetValue(
+                targetUnit,
+                out DamageAdjustment targetAdjustment);
+            int incomingReductionPercent =
+                targetAdjustment.IncomingReductionPercent;
+            bool preventDeath = targetAdjustment.PreventDeath;
+
+            if (outgoingIncreasePercent == 0 &&
+                incomingReductionPercent == 0 &&
+                !preventDeath) {
+                return;
+            }
+
+            int adjustedDamage;
+            if (incomingReductionPercent == 100) {
+                adjustedDamage = 0;
+            } else {
+                float multiplier =
+                    (1f + outgoingIncreasePercent / 100f) *
+                    (1f - incomingReductionPercent / 100f);
+                adjustedDamage = Mathf.RoundToInt(
+                    originalDamage * multiplier);
+                if (adjustedDamage < 0) {
+                    adjustedDamage = 0;
+                }
+            }
+
+            if (preventDeath) {
+                adjustedDamage = ApplyPreventDeath(
+                    targetUnit,
+                    adjustedDamage);
+            }
+
+            rule.ResultValue = adjustedDamage;
         } catch (Exception exception) {
-            Policies.Clear();
-            Main.LogError($"Damage-control policy processing failed; all policies were cleared: {exception}");
+            Adjustments.Clear();
+            Main.LogError(
+                $"Damage-control adjustment processing failed; all adjustments were cleared: {exception}");
         }
     }
 
-    private static void ApplyPreventDeath(
-        RuleRollDamage rule,
+    private static int ApplyPreventDeath(
         BaseUnitEntity targetUnit,
-        int originalDamage) {
+        int adjustedDamage) {
         PartHealth health = targetUnit.GetHealthOptional();
         if (health == null) {
-            return;
+            return adjustedDamage;
         }
 
         int currentHitPoints = health.HitPointsLeft;
         int maximumAllowedDamage = currentHitPoints > 1
             ? currentHitPoints - 1
             : 0;
-        int adjustedDamage = originalDamage < maximumAllowedDamage
-            ? originalDamage
+        int finalDamage = adjustedDamage < maximumAllowedDamage
+            ? adjustedDamage
             : maximumAllowedDamage;
-        if (adjustedDamage < 0) {
-            adjustedDamage = 0;
-        }
+        return finalDamage < 0 ? 0 : finalDamage;
+    }
 
-        if (adjustedDamage != originalDamage) {
-            rule.ResultValue = adjustedDamage;
+    private static bool IsSupportedUnit(BaseUnitEntity unit) {
+        return unit != null &&
+               unit is not StarshipEntity &&
+               !unit.IsDisposed &&
+               unit.IsInGame;
+    }
+
+    private static void ValidatePercent(
+        int percent,
+        string parameterName) {
+        if (percent < 0 || percent > 100) {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                percent,
+                "Damage adjustment percentages must be between 0 and 100.");
         }
     }
 
-    private sealed class UnitReferenceComparer : IEqualityComparer<BaseUnitEntity> {
+    private static void SetAdjustment(
+        BaseUnitEntity unit,
+        DamageAdjustment adjustment) {
+        if (adjustment.IsEmpty) {
+            Adjustments.Remove(unit);
+        } else {
+            Adjustments[unit] = adjustment;
+        }
+    }
+
+    private readonly struct DamageAdjustment {
+        internal int IncomingReductionPercent { get; }
+        internal int OutgoingIncreasePercent { get; }
+        internal bool PreventDeath { get; }
+
+        internal bool IsEmpty =>
+            IncomingReductionPercent == 0 &&
+            OutgoingIncreasePercent == 0 &&
+            !PreventDeath;
+
+        internal DamageAdjustment(
+            int incomingReductionPercent,
+            int outgoingIncreasePercent,
+            bool preventDeath) {
+            IncomingReductionPercent = incomingReductionPercent;
+            OutgoingIncreasePercent = outgoingIncreasePercent;
+            PreventDeath = preventDeath;
+        }
+    }
+
+    private sealed class UnitReferenceComparer :
+        IEqualityComparer<BaseUnitEntity> {
         internal static readonly UnitReferenceComparer Instance = new();
 
         public bool Equals(BaseUnitEntity x, BaseUnitEntity y) {
