@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using ChaosEncounters.UI;
 using Kingmaker.EntitySystem.Entities;
 using UnityEngine;
@@ -13,8 +14,7 @@ internal sealed class ExecutionListMechanic :
 
     private static System.Random OrderRandom;
 
-    private BaseUnitEntity[] OrderedEnemies;
-    private int ActiveEnemyCount;
+    private List<BaseUnitEntity> OrderedEnemies;
 
     public string Id => MechanicId;
     public string DisplayName => HudTitle;
@@ -73,8 +73,7 @@ internal sealed class ExecutionListMechanic :
         }
 
         var orderedEnemies =
-            new BaseUnitEntity[livingEnemyCount];
-        int orderedIndex = 0;
+            new List<BaseUnitEntity>(livingEnemyCount);
         for (int index = 0;
              index < session.InitialEnemies.Count;
              index++) {
@@ -86,8 +85,7 @@ internal sealed class ExecutionListMechanic :
                 continue;
             }
 
-            orderedEnemies[orderedIndex] = candidate;
-            orderedIndex++;
+            orderedEnemies.Add(candidate);
         }
 
         if (livingEnemyCount > 1) {
@@ -110,10 +108,9 @@ internal sealed class ExecutionListMechanic :
         }
 
         OrderedEnemies = orderedEnemies;
-        ActiveEnemyCount = livingEnemyCount;
 
         for (int index = 0;
-             index < ActiveEnemyCount;
+             index < OrderedEnemies.Count;
              index++) {
             ApplyPosition(
                 OrderedEnemies[index],
@@ -124,7 +121,7 @@ internal sealed class ExecutionListMechanic :
             HudTitle,
             HudDescription);
         Main.LogInfo(
-            $"The Execution List activated: EnemyCount={ActiveEnemyCount}");
+            $"The Execution List activated: EnemyCount={OrderedEnemies.Count}");
     }
 
     public void HandleRoundStart(int combatRound) {
@@ -143,18 +140,57 @@ internal sealed class ExecutionListMechanic :
         int combatRound) {
     }
 
+    internal void HandleEnemyJoinCombat(
+        BaseUnitEntity unit) {
+        if (OrderedEnemies == null ||
+            unit == null ||
+            unit.IsDisposed ||
+            unit.LifeState == null ||
+            unit.LifeState.IsDead ||
+            !unit.IsInCombat ||
+            !unit.IsPlayerEnemy) {
+            return;
+        }
+
+        for (int index = 0;
+             index < OrderedEnemies.Count;
+             index++) {
+            if (ReferenceEquals(
+                    OrderedEnemies[index],
+                    unit)) {
+                return;
+            }
+        }
+
+        bool showHud = OrderedEnemies.Count == 0;
+        OrderedEnemies.Add(unit);
+        int position = OrderedEnemies.Count;
+        ApplyPosition(unit, position);
+        if (showHud) {
+            EncounterHud.Show(
+                HudTitle,
+                HudDescription);
+        }
+
+        Main.LogInfo(
+            $"The Execution List appended a reinforcement: " +
+            $"Position={position} " +
+            $"ActiveEnemyCount={OrderedEnemies.Count} " +
+            $"UnitName={unit.CharacterName}");
+    }
+
     public void HandleEnemyDeath(
         BaseUnitEntity unit,
         int combatRound) {
         if (OrderedEnemies == null ||
             unit == null ||
-            ActiveEnemyCount <= 0) {
+            OrderedEnemies.Count == 0) {
             return;
         }
 
         int deadIndex = -1;
         for (int index = 0;
-             index < ActiveEnemyCount;
+             index < OrderedEnemies.Count;
              index++) {
             if (ReferenceEquals(
                     OrderedEnemies[index],
@@ -171,25 +207,19 @@ internal sealed class ExecutionListMechanic :
         DamageControl.ClearIncomingDamageReduction(unit);
         UnitMarker.ClearMarker(unit);
 
-        int oldActiveCount = ActiveEnemyCount;
+        OrderedEnemies.RemoveAt(deadIndex);
         for (int index = deadIndex;
-             index < oldActiveCount - 1;
+             index < OrderedEnemies.Count;
              index++) {
-            BaseUnitEntity shiftedEnemy =
-                OrderedEnemies[index + 1];
-            OrderedEnemies[index] = shiftedEnemy;
             ApplyPosition(
-                shiftedEnemy,
+                OrderedEnemies[index],
                 index + 1);
         }
 
-        ActiveEnemyCount = oldActiveCount - 1;
-        OrderedEnemies[ActiveEnemyCount] = null;
-
         Main.LogInfo(
             $"The Execution List advanced: FallenPosition={fallenPosition} " +
-            $"RemainingEnemies={ActiveEnemyCount}");
-        if (ActiveEnemyCount == 0) {
+            $"RemainingEnemies={OrderedEnemies.Count}");
+        if (OrderedEnemies.Count == 0) {
             EncounterHud.Hide();
         }
     }
@@ -197,7 +227,6 @@ internal sealed class ExecutionListMechanic :
     public void Deactivate(
         EncounterMechanicEndReason reason) {
         OrderedEnemies = null;
-        ActiveEnemyCount = 0;
     }
 
     private static void ApplyPosition(

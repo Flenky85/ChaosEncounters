@@ -14,9 +14,11 @@ internal sealed class EncounterRuntime :
     IRoundEndHandler,
     ITurnStartHandler,
     ITurnEndHandler,
-    IUnitDieHandler {
+    IUnitDieHandler,
+    IAnyUnitCombatHandler {
     private static readonly EncounterRuntime Instance = new();
     private static EncounterSession CurrentSession;
+    private static List<BaseUnitEntity> PendingEnemyJoins;
     private static bool SessionActivated;
     private static bool DuplicateStartWarningLogged;
     private static bool RuntimeFaulted;
@@ -48,6 +50,7 @@ internal sealed class EncounterRuntime :
                 SessionActivated = true;
                 EncounterMechanicController.Activate(
                     CurrentSession);
+                ForwardPendingEnemyJoins();
             }
 
             EncounterMechanicController.HandleRoundStart(
@@ -153,6 +156,55 @@ internal sealed class EncounterRuntime :
         }
     }
 
+    public void HandleUnitJoinCombat(BaseUnitEntity unit) {
+        if (RuntimeFaulted ||
+            CurrentSession == null ||
+            (SessionActivated &&
+             !EncounterMechanicController
+                 .IsExecutionListActive) ||
+            unit == null ||
+            unit.IsDisposed ||
+            unit.LifeState == null ||
+            unit.LifeState.IsDead ||
+            !unit.IsInCombat ||
+            !unit.IsPlayerEnemy) {
+            return;
+        }
+
+        try {
+            if (SessionActivated) {
+                EncounterMechanicController
+                    .HandleEnemyJoinCombat(unit);
+                return;
+            }
+
+            List<BaseUnitEntity> pendingEnemyJoins =
+                PendingEnemyJoins;
+            if (pendingEnemyJoins == null) {
+                pendingEnemyJoins =
+                    new List<BaseUnitEntity>();
+                PendingEnemyJoins = pendingEnemyJoins;
+            }
+            for (int index = 0;
+                 index < pendingEnemyJoins.Count;
+                 index++) {
+                if (ReferenceEquals(
+                        pendingEnemyJoins[index],
+                        unit)) {
+                    return;
+                }
+            }
+            pendingEnemyJoins.Add(unit);
+        } catch (Exception exception) {
+            FaultRuntime(
+                nameof(HandleUnitJoinCombat),
+                exception);
+        }
+    }
+
+    public void HandleUnitLeaveCombat(BaseUnitEntity unit) {
+    }
+
     public void HandlePartyCombatStateChanged(bool inCombat) {
         if (!inCombat) {
             HandleCombatEnd();
@@ -179,6 +231,7 @@ internal sealed class EncounterRuntime :
             }
 
             SessionActivated = false;
+            PendingEnemyJoins = null;
             DuplicateStartWarningLogged = false;
             RuntimeFaulted = false;
             RuntimeFaultLogged = false;
@@ -234,12 +287,32 @@ internal sealed class EncounterRuntime :
         }
     }
 
+    private static void ForwardPendingEnemyJoins() {
+        List<BaseUnitEntity> pendingEnemyJoins =
+            PendingEnemyJoins;
+        PendingEnemyJoins = null;
+        if (pendingEnemyJoins == null ||
+            !EncounterMechanicController
+                .IsExecutionListActive) {
+            return;
+        }
+
+        for (int index = 0;
+             index < pendingEnemyJoins.Count;
+             index++) {
+            EncounterMechanicController
+                .HandleEnemyJoinCombat(
+                    pendingEnemyJoins[index]);
+        }
+    }
+
     private static void FaultRuntime(
         string callbackName,
         Exception exception) {
         EncounterMechanicController.Deactivate(
             EncounterMechanicEndReason.RuntimeFault);
         CurrentSession = null;
+        PendingEnemyJoins = null;
         SessionActivated = false;
         RuntimeFaulted = true;
 
@@ -254,6 +327,7 @@ internal sealed class EncounterRuntime :
         EncounterMechanicController.Deactivate(
             EncounterMechanicEndReason.CombatEnded);
         CurrentSession = null;
+        PendingEnemyJoins = null;
         SessionActivated = false;
         DuplicateStartWarningLogged = false;
         RuntimeFaulted = false;

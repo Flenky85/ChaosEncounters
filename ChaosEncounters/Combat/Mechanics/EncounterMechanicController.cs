@@ -27,6 +27,9 @@ internal static class EncounterMechanicController {
     internal static bool HasActiveMechanic =>
         ActiveMechanic != null;
 
+    internal static bool IsExecutionListActive =>
+        ActiveMechanic is ExecutionListMechanic;
+
     internal static IReadOnlyList<IEncounterMechanic>
         GetRegisteredMechanics(EncounterType encounterType) {
         switch (encounterType) {
@@ -176,6 +179,14 @@ internal static class EncounterMechanicController {
             mechanic.HandleEnemyDeath(
                 unit,
                 combatRound);
+        }
+    }
+
+    internal static void HandleEnemyJoinCombat(
+        BaseUnitEntity unit) {
+        if (ActiveMechanic is
+            ExecutionListMechanic executionList) {
+            executionList.HandleEnemyJoinCombat(unit);
         }
     }
 
