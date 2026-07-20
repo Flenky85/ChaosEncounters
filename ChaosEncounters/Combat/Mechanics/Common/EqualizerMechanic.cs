@@ -665,13 +665,28 @@ internal sealed class EqualizerMechanic :
 
                 int targetHitPoints =
                     member.PlannedHitPoints;
+                int expectedNativeHitPoints =
+                    CalculateExpectedNativeHitPoints(
+                        member.Health,
+                        targetHitPoints);
                 if (member.Health.HitPointsLeft !=
-                    targetHitPoints) {
+                    expectedNativeHitPoints) {
                     member.Health.SetHitPointsLeft(
                         targetHitPoints);
                 }
-                member.LastSynchronizedRealHP =
+                int actualHitPoints =
                     member.Health.HitPointsLeft;
+                if (actualHitPoints !=
+                    expectedNativeHitPoints) {
+                    throw new InvalidOperationException(
+                        $"The Equalizer assignment was clamped or changed: " +
+                        $"Unit={member.Unit.CharacterName}, " +
+                        $"Planned={targetHitPoints}, " +
+                        $"ExpectedNative={expectedNativeHitPoints}, " +
+                        $"Actual={actualHitPoints}.");
+                }
+                member.LastSynchronizedRealHP =
+                    actualHitPoints;
             }
         } finally {
             InternalSynchronizationDepth--;
@@ -696,7 +711,7 @@ internal sealed class EqualizerMechanic :
              index < Members.Count;
              index++) {
             MemberState member = Members[index];
-            int current = member.LastSynchronizedRealHP;
+            int current = member.PlannedHitPoints;
             if (current < 1) {
                 current = 1;
             }
@@ -879,7 +894,7 @@ internal sealed class EqualizerMechanic :
             return;
         }
 
-        long visibleSum = 0;
+        long plannedSum = 0;
         for (int index = 0;
              index < Members.Count;
              index++) {
@@ -902,39 +917,87 @@ internal sealed class EqualizerMechanic :
                     $"MinHitPoints={member.Health.MinHitPoints}.");
             }
 
-            int visibleHitPoints =
+            if (member.PlannedHitPoints < 1 ||
+                member.PlannedHitPoints >
+                    member.RegisteredMaximumHitPoints) {
+                throw new InvalidOperationException(
+                    $"The Equalizer produced an invalid logical allocation: " +
+                    $"Unit={member.Unit.CharacterName}, " +
+                    $"Planned={member.PlannedHitPoints}.");
+            }
+
+            int expectedNativeHitPoints =
+                CalculateExpectedNativeHitPoints(
+                    member.Health,
+                    member.PlannedHitPoints);
+            int actualHitPoints =
                 member.Health.HitPointsLeft;
-            if (visibleHitPoints !=
-                member.PlannedHitPoints) {
+            if (actualHitPoints !=
+                expectedNativeHitPoints) {
                 throw new InvalidOperationException(
                     $"The Equalizer assignment was clamped or changed: " +
                     $"Unit={member.Unit.CharacterName}, " +
-                    $"Expected={member.PlannedHitPoints}, " +
-                    $"Actual={visibleHitPoints}.");
+                    $"Planned={member.PlannedHitPoints}, " +
+                    $"ExpectedNative={expectedNativeHitPoints}, " +
+                    $"Actual={actualHitPoints}.");
             }
-            visibleSum = checked(
-                visibleSum + visibleHitPoints);
-        }
-
-        if (CurrentPool >= Members.Count) {
-            if (visibleSum != CurrentPool) {
+            if (member.LastSynchronizedRealHP !=
+                actualHitPoints) {
                 throw new InvalidOperationException(
-                    $"The Equalizer visible sum does not match the pool: " +
-                    $"Visible={visibleSum}, Pool={CurrentPool}.");
+                    $"The Equalizer native read-back changed after synchronization: " +
+                    $"Unit={member.Unit.CharacterName}, " +
+                    $"Expected={member.LastSynchronizedRealHP}, " +
+                    $"Actual={actualHitPoints}.");
             }
-            return;
+            plannedSum = checked(
+                plannedSum + member.PlannedHitPoints);
         }
 
-        if (CurrentPool > 0) {
+        long logicalTarget = CurrentPool >= Members.Count
+            ? CurrentPool
+            : Members.Count;
+        if (plannedSum != logicalTarget) {
+            throw new InvalidOperationException(
+                $"The Equalizer logical allocation does not match its target: " +
+                $"Planned={plannedSum}, Target={logicalTarget}, " +
+                $"Pool={CurrentPool}.");
+        }
+
+        if (CurrentPool > 0 &&
+            CurrentPool < Members.Count) {
             for (int index = 0;
                  index < Members.Count;
                  index++) {
-                if (Members[index].Health.HitPointsLeft != 1) {
+                if (Members[index].PlannedHitPoints != 1) {
                     throw new InvalidOperationException(
                         "The Equalizer 1-HP floor invariant failed.");
                 }
             }
         }
+    }
+
+    private static int CalculateExpectedNativeHitPoints(
+        PartHealth health,
+        int targetHitPoints) {
+        int maximumHitPoints = health.MaxHitPoints;
+        int requestedDamage = Math.Max(
+            0,
+            maximumHitPoints - targetHitPoints);
+        int maximumDamage = Math.Max(
+            0,
+            maximumHitPoints - health.MinHitPoints);
+        int assignedDamage = Math.Max(
+            0,
+            Math.Min(
+                requestedDamage,
+                maximumDamage));
+        float missingHitPointsFraction =
+            (float)assignedDamage /
+            maximumHitPoints;
+        int nativeDamage = Mathf.FloorToInt(
+            missingHitPointsFraction *
+            maximumHitPoints);
+        return maximumHitPoints - nativeDamage;
     }
 
     private bool IsMemberSynchronizable(
@@ -1097,7 +1160,7 @@ internal sealed class EqualizerMechanic :
             }
 
             long contribution =
-                member.LastSynchronizedRealHP;
+                member.PlannedHitPoints;
             CurrentPool = contribution >= CurrentPool
                 ? 0
                 : CurrentPool - contribution;
@@ -1363,6 +1426,8 @@ internal sealed class EqualizerMechanic :
                 registrationOrdinal;
             LastSynchronizedRealHP =
                 health.HitPointsLeft;
+            PlannedHitPoints =
+                LastSynchronizedRealHP;
             MaximumHitPointsChangedHandler =
                 HandleMaximumHitPointsChanged;
         }
