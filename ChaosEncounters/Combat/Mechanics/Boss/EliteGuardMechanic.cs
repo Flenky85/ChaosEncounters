@@ -27,6 +27,8 @@ internal sealed class EliteGuardMechanic :
     private bool GuardTwoDead;
 
     public string Id => MechanicId;
+    public string DisplayName => HudTitle;
+    public string Description => HudDescription;
 
     public bool CanActivate(EncounterSession session) {
         if (session == null ||

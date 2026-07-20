@@ -24,6 +24,21 @@ internal static class EncounterMechanicController {
     internal static bool HasActiveMechanic =>
         ActiveMechanic != null;
 
+    internal static IReadOnlyList<IEncounterMechanic>
+        GetRegisteredMechanics(EncounterType encounterType) {
+        switch (encounterType) {
+            case EncounterType.Common:
+                return CommonMechanics;
+            case EncounterType.Boss:
+                return BossMechanics;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(encounterType),
+                    encounterType,
+                    "Unsupported encounter type.");
+        }
+    }
+
     internal static void Activate(EncounterSession session) {
         if (session == null) {
             throw new ArgumentNullException(nameof(session));

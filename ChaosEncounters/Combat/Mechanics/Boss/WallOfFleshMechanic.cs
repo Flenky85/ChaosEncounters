@@ -17,6 +17,8 @@ internal sealed class WallOfFleshMechanic :
     private bool ProtectionActive;
 
     public string Id => MechanicId;
+    public string DisplayName => HudTitle;
+    public string Description => HudDescription;
 
     public bool CanActivate(EncounterSession session) {
         return session != null &&

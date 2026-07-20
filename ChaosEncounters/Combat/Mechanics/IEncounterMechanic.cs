@@ -4,6 +4,8 @@ namespace ChaosEncounters.Combat.Mechanics;
 
 internal interface IEncounterMechanic {
     string Id { get; }
+    string DisplayName { get; }
+    string Description { get; }
 
     bool CanActivate(EncounterSession session);
 

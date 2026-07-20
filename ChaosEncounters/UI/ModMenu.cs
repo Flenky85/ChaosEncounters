@@ -1,3 +1,4 @@
+using ChaosEncounters.Combat;
 using ChaosEncounters.Combat.Mechanics;
 using UnityEngine;
 
@@ -10,10 +11,20 @@ internal static class ModMenu {
         "Immediately removes the active Chaos Encounters mechanic from the current combat and clears all damage modifiers, unit markers, and HUD elements created by the mod. Use this only if a mechanic makes the encounter impossible or behaves incorrectly. The combat continues and no replacement mechanic is selected.";
 
     private static readonly string[] TabLabels = {
-        "General"
+        "General",
+        "Encounters"
     };
 
-    private static int SelectedTab;
+    private static readonly string[] EncounterTabLabels = {
+        "Common",
+        "Boss"
+    };
+
+    private static readonly Dictionary<IEncounterMechanic, bool>
+        PlaceholderEnabledStates = new();
+
+    private static int SelectedTopLevelTab;
+    private static int SelectedEncounterTab;
 
     internal static void Draw() {
         float contentWidth = Mathf.Clamp(
@@ -26,16 +37,19 @@ internal static class ModMenu {
         GUILayout.BeginVertical(
             GUILayout.Width(contentWidth));
 
-        SelectedTab = GUILayout.Toolbar(
-            SelectedTab,
+        SelectedTopLevelTab = GUILayout.Toolbar(
+            SelectedTopLevelTab,
             TabLabels);
 
-        switch (SelectedTab) {
+        switch (SelectedTopLevelTab) {
             case 0:
                 DrawGeneralTab();
                 break;
+            case 1:
+                DrawEncountersTab();
+                break;
             default:
-                SelectedTab = 0;
+                SelectedTopLevelTab = 0;
                 DrawGeneralTab();
                 break;
         }
@@ -48,16 +62,7 @@ internal static class ModMenu {
     private static void DrawGeneralTab() {
         GUILayout.Space(8f);
         GUILayout.Label("Emergency Controls");
-        GUIStyle labelStyle = GUI.skin.label;
-        bool previousWordWrap = labelStyle.wordWrap;
-        try {
-            labelStyle.wordWrap = true;
-            GUILayout.Label(
-                EmergencyDescription,
-                labelStyle);
-        } finally {
-            labelStyle.wordWrap = previousWordWrap;
-        }
+        DrawWrappedLabel(EmergencyDescription);
 
         bool previousGuiEnabled = GUI.enabled;
         try {
@@ -70,6 +75,81 @@ internal static class ModMenu {
             }
         } finally {
             GUI.enabled = previousGuiEnabled;
+        }
+    }
+
+    private static void DrawEncountersTab() {
+        GUILayout.Space(8f);
+        SelectedEncounterTab = GUILayout.Toolbar(
+            SelectedEncounterTab,
+            EncounterTabLabels);
+
+        switch (SelectedEncounterTab) {
+            case 0:
+                DrawEncounterCategory(EncounterType.Common);
+                break;
+            case 1:
+                DrawEncounterCategory(EncounterType.Boss);
+                break;
+            default:
+                SelectedEncounterTab = 0;
+                DrawEncounterCategory(EncounterType.Common);
+                break;
+        }
+    }
+
+    private static void DrawEncounterCategory(
+        EncounterType encounterType) {
+        IReadOnlyList<IEncounterMechanic> mechanics =
+            EncounterMechanicController.GetRegisteredMechanics(
+                encounterType);
+        if (mechanics.Count == 0) {
+            GUILayout.Space(8f);
+            GUILayout.Label(
+                "No encounter mechanics are registered in this category.");
+            return;
+        }
+
+        GUILayout.Space(8f);
+        for (int index = 0; index < mechanics.Count; index++) {
+            IEncounterMechanic mechanic = mechanics[index];
+            if (mechanic == null) {
+                continue;
+            }
+
+            if (!PlaceholderEnabledStates.TryGetValue(
+                    mechanic,
+                    out bool placeholderEnabled)) {
+                placeholderEnabled = true;
+                PlaceholderEnabledStates.Add(
+                    mechanic,
+                    placeholderEnabled);
+            }
+
+            GUILayout.BeginVertical(GUI.skin.box);
+            bool updatedPlaceholderEnabled = GUILayout.Toggle(
+                placeholderEnabled,
+                mechanic.DisplayName);
+            if (updatedPlaceholderEnabled != placeholderEnabled) {
+                PlaceholderEnabledStates[mechanic] =
+                    updatedPlaceholderEnabled;
+            }
+            DrawWrappedLabel(mechanic.Description);
+            GUILayout.EndVertical();
+            GUILayout.Space(6f);
+        }
+    }
+
+    private static void DrawWrappedLabel(string text) {
+        GUIStyle labelStyle = GUI.skin.label;
+        bool previousWordWrap = labelStyle.wordWrap;
+        try {
+            labelStyle.wordWrap = true;
+            GUILayout.Label(
+                text,
+                labelStyle);
+        } finally {
+            labelStyle.wordWrap = previousWordWrap;
         }
     }
 }

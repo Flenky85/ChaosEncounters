@@ -17,6 +17,8 @@ internal sealed class ExecutionListMechanic :
     private int ActiveEnemyCount;
 
     public string Id => MechanicId;
+    public string DisplayName => HudTitle;
+    public string Description => HudDescription;
 
     public bool CanActivate(EncounterSession session) {
         if (session == null ||
