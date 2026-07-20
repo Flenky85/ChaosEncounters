@@ -1,10 +1,12 @@
+using System.Collections.Generic;
 using ChaosEncounters.UI;
 using Kingmaker.EntitySystem.Entities;
 
 namespace ChaosEncounters.Combat.Mechanics.Boss;
 
 internal sealed class WallOfFleshMechanic :
-    IEncounterMechanic {
+    IEncounterMechanic,
+    IEnemyJoinAwareMechanic {
     private const string MechanicId = "WallOfFlesh";
     private const string HudTitle = "Wall of Flesh";
     private const string HudDescription =
@@ -13,7 +15,7 @@ internal sealed class WallOfFleshMechanic :
 
     private EncounterSession ActiveSession;
     private BaseUnitEntity Boss;
-    private int RemainingMinions;
+    private List<BaseUnitEntity> LivingMinions;
     private bool ProtectionActive;
 
     public string Id => MechanicId;
@@ -47,7 +49,7 @@ internal sealed class WallOfFleshMechanic :
         }
 
         bool leaderFound = false;
-        int remainingMinions = 0;
+        var livingMinions = new List<BaseUnitEntity>();
         for (int index = 0;
              index < session.InitialEnemies.Count;
              index++) {
@@ -55,9 +57,13 @@ internal sealed class WallOfFleshMechanic :
                 session.InitialEnemies[index];
             if (ReferenceEquals(candidate, leader)) {
                 leaderFound = true;
-            } else if (candidate != null &&
-                       !candidate.LifeState.IsDead) {
-                remainingMinions++;
+            } else if (IsValidSubordinate(
+                           candidate,
+                           leader) &&
+                       FindUnitIndex(
+                           livingMinions,
+                           candidate) < 0) {
+                livingMinions.Add(candidate);
             }
         }
         if (!leaderFound) {
@@ -67,8 +73,8 @@ internal sealed class WallOfFleshMechanic :
 
         ActiveSession = session;
         Boss = leader;
-        RemainingMinions = remainingMinions;
-        ProtectionActive = RemainingMinions > 0;
+        LivingMinions = livingMinions;
+        ProtectionActive = LivingMinions.Count > 0;
 
         if (ProtectionActive) {
             DamageControl.SetIncomingDamageReduction(
@@ -89,7 +95,7 @@ internal sealed class WallOfFleshMechanic :
             $"Wall of Flesh activated: " +
             $"BossName={Boss.CharacterName} " +
             $"BossBlueprint={Boss.Blueprint?.name ?? "None"} " +
-            $"RemainingMinions={RemainingMinions} " +
+            $"RemainingMinions={LivingMinions.Count} " +
             $"ProtectionActive={ProtectionActive}");
     }
 
@@ -109,6 +115,42 @@ internal sealed class WallOfFleshMechanic :
         int combatRound) {
     }
 
+    public void HandleEnemyJoined(
+        BaseUnitEntity unit) {
+        List<BaseUnitEntity> livingMinions =
+            LivingMinions;
+        BaseUnitEntity boss = Boss;
+        if (ActiveSession == null ||
+            livingMinions == null ||
+            !IsLivingBoss(boss) ||
+            !IsValidSubordinate(unit, boss) ||
+            FindUnitIndex(livingMinions, unit) >= 0) {
+            return;
+        }
+
+        livingMinions.Add(unit);
+        bool wallRestored = !ProtectionActive;
+        if (wallRestored) {
+            ProtectionActive = true;
+            DamageControl.SetIncomingDamageReduction(
+                boss,
+                100);
+            UnitMarker.SetMarker(
+                boss,
+                BossMarker,
+                ChaosColors.Grey);
+            EncounterHud.Show(
+                HudTitle,
+                HudDescription);
+        }
+
+        Main.LogInfo(
+            $"Wall of Flesh reinforcement registered: " +
+            $"UnitName={unit.CharacterName} " +
+            $"LivingMinions={livingMinions.Count} " +
+            $"WallRestored={wallRestored}");
+    }
+
     public void HandleEnemyDeath(
         BaseUnitEntity unit,
         int combatRound) {
@@ -119,8 +161,9 @@ internal sealed class WallOfFleshMechanic :
         if (ReferenceEquals(unit, Boss)) {
             bool protectionWasActive = ProtectionActive;
             ProtectionActive = false;
-            RemainingMinions = 0;
-            DamageControl.ClearPolicy(Boss);
+            LivingMinions?.Clear();
+            LivingMinions = null;
+            DamageControl.ClearIncomingDamageReduction(Boss);
             UnitMarker.ClearMarker(Boss);
             EncounterHud.Hide();
             if (protectionWasActive) {
@@ -130,36 +173,26 @@ internal sealed class WallOfFleshMechanic :
             return;
         }
 
-        if (!ProtectionActive) {
+        List<BaseUnitEntity> livingMinions =
+            LivingMinions;
+        if (livingMinions == null) {
             return;
         }
 
-        bool isInitialSubordinate = false;
-        for (int index = 0;
-             index < ActiveSession.InitialEnemies.Count;
-             index++) {
-            BaseUnitEntity candidate =
-                ActiveSession.InitialEnemies[index];
-            if (ReferenceEquals(candidate, unit) &&
-                !ReferenceEquals(candidate, Boss)) {
-                isInitialSubordinate = true;
-                break;
-            }
-        }
-        if (!isInitialSubordinate) {
+        int minionIndex = FindUnitIndex(
+            livingMinions,
+            unit);
+        if (minionIndex < 0) {
             return;
         }
 
-        if (RemainingMinions > 0) {
-            RemainingMinions--;
-        }
-        if (RemainingMinions > 0) {
+        livingMinions.RemoveAt(minionIndex);
+        if (livingMinions.Count > 0) {
             return;
         }
 
         ProtectionActive = false;
-        RemainingMinions = 0;
-        DamageControl.ClearPolicy(Boss);
+        DamageControl.ClearIncomingDamageReduction(Boss);
         EncounterHud.Hide();
         Main.LogInfo(
             $"Wall of Flesh broken: BossName={Boss.CharacterName}");
@@ -167,9 +200,44 @@ internal sealed class WallOfFleshMechanic :
 
     public void Deactivate(
         EncounterMechanicEndReason reason) {
+        LivingMinions?.Clear();
         ActiveSession = null;
         Boss = null;
-        RemainingMinions = 0;
+        LivingMinions = null;
         ProtectionActive = false;
+    }
+
+    private static bool IsLivingBoss(
+        BaseUnitEntity boss) {
+        return boss != null &&
+               !boss.IsDisposed &&
+               boss.LifeState != null &&
+               !boss.LifeState.IsDead;
+    }
+
+    private static bool IsValidSubordinate(
+        BaseUnitEntity unit,
+        BaseUnitEntity boss) {
+        return unit != null &&
+               !ReferenceEquals(unit, boss) &&
+               !unit.IsDisposed &&
+               unit.LifeState != null &&
+               !unit.LifeState.IsDead &&
+               unit.IsInCombat &&
+               unit.IsPlayerEnemy;
+    }
+
+    private static int FindUnitIndex(
+        List<BaseUnitEntity> units,
+        BaseUnitEntity unit) {
+        for (int index = 0;
+             index < units.Count;
+             index++) {
+            if (ReferenceEquals(units[index], unit)) {
+                return index;
+            }
+        }
+
+        return -1;
     }
 }

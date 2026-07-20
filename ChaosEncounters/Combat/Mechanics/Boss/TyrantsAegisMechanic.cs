@@ -1,10 +1,12 @@
+using System.Collections.Generic;
 using ChaosEncounters.UI;
 using Kingmaker.EntitySystem.Entities;
 
 namespace ChaosEncounters.Combat.Mechanics.Boss;
 
 internal sealed class TyrantsAegisMechanic :
-    IEncounterMechanic {
+    IEncounterMechanic,
+    IEnemyJoinAwareMechanic {
     private const string MechanicId = "TyrantsAegis";
     private const string HudTitle = "Tyrant's Aegis";
     private const string HudDescription =
@@ -14,6 +16,7 @@ internal sealed class TyrantsAegisMechanic :
 
     private EncounterSession ActiveSession;
     private BaseUnitEntity Boss;
+    private List<BaseUnitEntity> ProtectedEnemies;
     private bool Resolved;
 
     public string Id => MechanicId;
@@ -64,9 +67,9 @@ internal sealed class TyrantsAegisMechanic :
 
         ActiveSession = session;
         Boss = leader;
+        ProtectedEnemies = new List<BaseUnitEntity>();
         Resolved = false;
 
-        int protectedEnemyCount = 0;
         for (int index = 0;
              index < session.InitialEnemies.Count;
              index++) {
@@ -79,6 +82,12 @@ internal sealed class TyrantsAegisMechanic :
                 continue;
             }
 
+            if (!IsValidProtectedEnemy(enemy, leader) ||
+                FindProtectedEnemyIndex(enemy) >= 0) {
+                continue;
+            }
+
+            ProtectedEnemies.Add(enemy);
             DamageControl.SetIncomingDamageReduction(
                 enemy,
                 100);
@@ -86,7 +95,6 @@ internal sealed class TyrantsAegisMechanic :
                 enemy,
                 InvulnerableMarker,
                 ChaosColors.Grey);
-            protectedEnemyCount++;
         }
 
         EncounterHud.Show(
@@ -96,7 +104,7 @@ internal sealed class TyrantsAegisMechanic :
             $"Tyrant's Aegis activated: " +
             $"BossName={leader.CharacterName} " +
             $"BossBlueprint={leader.Blueprint?.name ?? "None"} " +
-            $"ProtectedEnemyCount={protectedEnemyCount}");
+            $"ProtectedEnemyCount={ProtectedEnemies.Count}");
     }
 
     public void HandleRoundStart(int combatRound) {
@@ -115,6 +123,31 @@ internal sealed class TyrantsAegisMechanic :
         int combatRound) {
     }
 
+    public void HandleEnemyJoined(
+        BaseUnitEntity unit) {
+        if (ActiveSession == null ||
+            Resolved ||
+            ProtectedEnemies == null ||
+            !IsLivingBoss(Boss) ||
+            !IsValidProtectedEnemy(unit, Boss) ||
+            FindProtectedEnemyIndex(unit) >= 0) {
+            return;
+        }
+
+        ProtectedEnemies.Add(unit);
+        DamageControl.SetIncomingDamageReduction(
+            unit,
+            100);
+        UnitMarker.SetMarker(
+            unit,
+            InvulnerableMarker,
+            ChaosColors.Grey);
+        Main.LogInfo(
+            $"Tyrant's Aegis reinforcement protected: " +
+            $"UnitName={unit.CharacterName} " +
+            $"ProtectedEnemyCount={ProtectedEnemies.Count}");
+    }
+
     public void HandleEnemyDeath(
         BaseUnitEntity unit,
         int combatRound) {
@@ -125,28 +158,34 @@ internal sealed class TyrantsAegisMechanic :
         }
 
         if (!ReferenceEquals(unit, Boss)) {
+            int protectedEnemyIndex =
+                FindProtectedEnemyIndex(unit);
+            if (protectedEnemyIndex < 0) {
+                return;
+            }
+
+            ProtectedEnemies.RemoveAt(
+                protectedEnemyIndex);
             DamageControl.ClearPolicy(unit);
             UnitMarker.ClearMarker(unit);
             return;
         }
 
         Resolved = true;
-        int releasedEnemyCount = 0;
+        int releasedEnemyCount =
+            ProtectedEnemies.Count;
         for (int index = 0;
-             index < ActiveSession.InitialEnemies.Count;
+             index < ProtectedEnemies.Count;
              index++) {
             BaseUnitEntity enemy =
-                ActiveSession.InitialEnemies[index];
-            if (ReferenceEquals(enemy, Boss)) {
-                UnitMarker.ClearMarker(enemy);
-                continue;
-            }
+                ProtectedEnemies[index];
 
             DamageControl.ClearPolicy(enemy);
             UnitMarker.ClearMarker(enemy);
-            releasedEnemyCount++;
         }
+        ProtectedEnemies.Clear();
 
+        UnitMarker.ClearMarker(Boss);
         EncounterHud.Hide();
         Main.LogInfo(
             $"Tyrant's Aegis broken: " +
@@ -156,8 +195,51 @@ internal sealed class TyrantsAegisMechanic :
 
     public void Deactivate(
         EncounterMechanicEndReason reason) {
+        ProtectedEnemies?.Clear();
         ActiveSession = null;
         Boss = null;
+        ProtectedEnemies = null;
         Resolved = false;
+    }
+
+    private static bool IsLivingBoss(
+        BaseUnitEntity boss) {
+        return boss != null &&
+               !boss.IsDisposed &&
+               boss.LifeState != null &&
+               !boss.LifeState.IsDead;
+    }
+
+    private static bool IsValidProtectedEnemy(
+        BaseUnitEntity unit,
+        BaseUnitEntity boss) {
+        return unit != null &&
+               !ReferenceEquals(unit, boss) &&
+               !unit.IsDisposed &&
+               unit.LifeState != null &&
+               !unit.LifeState.IsDead &&
+               unit.IsInCombat &&
+               unit.IsPlayerEnemy;
+    }
+
+    private int FindProtectedEnemyIndex(
+        BaseUnitEntity unit) {
+        List<BaseUnitEntity> protectedEnemies =
+            ProtectedEnemies;
+        if (protectedEnemies == null) {
+            return -1;
+        }
+
+        for (int index = 0;
+             index < protectedEnemies.Count;
+             index++) {
+            if (ReferenceEquals(
+                    protectedEnemies[index],
+                    unit)) {
+                return index;
+            }
+        }
+
+        return -1;
     }
 }
