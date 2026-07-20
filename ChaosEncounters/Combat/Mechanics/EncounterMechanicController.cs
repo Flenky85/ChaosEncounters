@@ -1,5 +1,6 @@
 using ChaosEncounters.UI;
 using ChaosEncounters.Combat.Mechanics.Boss;
+using ChaosEncounters.Combat.Mechanics.Common;
 using Kingmaker.EntitySystem.Entities;
 
 namespace ChaosEncounters.Combat.Mechanics;
@@ -7,8 +8,9 @@ namespace ChaosEncounters.Combat.Mechanics;
 internal static class EncounterMechanicController {
     private static System.Random SelectionRandom;
 
-    private static readonly IEncounterMechanic[] CommonMechanics =
-        Array.Empty<IEncounterMechanic>();
+    private static readonly IEncounterMechanic[] CommonMechanics = {
+        new ExecutionListMechanic()
+    };
 
     private static readonly IEncounterMechanic[] BossMechanics = {
         new TyrantsAegisMechanic(),
