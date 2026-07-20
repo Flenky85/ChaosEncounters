@@ -8,11 +8,11 @@ internal sealed class EliteGuardMechanic :
     private const string MechanicId = "EliteGuard";
     private const string HudTitle = "The Elite Guard";
     private const string HudDescription =
-        "The Boss and two chosen Guards form an elite defensive unit. The Boss and both Guards begin with 40% damage reduction, which falls to 20% after the first member of the group dies and to 0% after the second. The Guards deal 30% increased damage for the entire encounter.";
+        "The Boss and two chosen Guards form an elite defensive unit. The Boss and both Guards begin with 60% damage reduction, which falls to 30% after the first member of the group dies and to 0% after the second. The Guards deal 30% increased damage for the entire encounter.";
     private const string BossMarker = "Boss";
     private const string GuardMarker = "Guard";
-    private const int InitialIncomingReduction = 40;
-    private const int WeakenedIncomingReduction = 20;
+    private const int InitialIncomingReduction = 60;
+    private const int WeakenedIncomingReduction = 30;
     private const int GuardOutgoingIncrease = 30;
 
     private static System.Random GuardSelectionRandom;
