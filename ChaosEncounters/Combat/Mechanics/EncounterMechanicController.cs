@@ -21,6 +21,9 @@ internal static class EncounterMechanicController {
     private static EncounterSession ActiveSession;
     private static IEncounterMechanic ActiveMechanic;
 
+    internal static bool HasActiveMechanic =>
+        ActiveMechanic != null;
+
     internal static void Activate(EncounterSession session) {
         if (session == null) {
             throw new ArgumentNullException(nameof(session));
@@ -151,12 +154,35 @@ internal static class EncounterMechanicController {
         }
     }
 
+    internal static bool DisableActiveMechanicForCurrentCombat() {
+        IEncounterMechanic mechanic = ActiveMechanic;
+        if (mechanic == null) {
+            return false;
+        }
+
+        string mechanicId = mechanic.Id;
+        ActiveMechanic = null;
+        CleanupMechanic(
+            mechanic,
+            EncounterMechanicEndReason.ManualEmergencyDisable);
+        Main.LogWarning(
+            $"Encounter mechanic disabled for the current combat: " +
+            $"MechanicId={mechanicId}");
+        return true;
+    }
+
     internal static void Deactivate(
         EncounterMechanicEndReason reason) {
         IEncounterMechanic mechanic = ActiveMechanic;
         ActiveMechanic = null;
         ActiveSession = null;
 
+        CleanupMechanic(mechanic, reason);
+    }
+
+    private static void CleanupMechanic(
+        IEncounterMechanic mechanic,
+        EncounterMechanicEndReason reason) {
         try {
             if (mechanic != null) {
                 try {

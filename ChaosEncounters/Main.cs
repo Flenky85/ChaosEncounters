@@ -38,6 +38,6 @@ public static class Main {
     }
 
     public static void OnGUI(UnityModManager.ModEntry modEntry) {
-
+        ModMenu.Draw();
     }
 }

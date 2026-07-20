@@ -29,5 +29,6 @@ internal interface IEncounterMechanic {
 
 internal enum EncounterMechanicEndReason {
     CombatEnded,
-    RuntimeFault
+    RuntimeFault,
+    ManualEmergencyDisable
 }
