@@ -10,7 +10,8 @@ internal static class EncounterMechanicController {
     private static System.Random SelectionRandom;
 
     private static readonly IEncounterMechanic[] CommonMechanics = {
-        new ExecutionListMechanic()
+        new ExecutionListMechanic(),
+        new RisingVengeanceMechanic()
     };
 
     private static readonly IEncounterMechanic[] BossMechanics = {
