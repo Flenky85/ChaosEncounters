@@ -20,9 +20,11 @@ internal sealed class EqualizerMechanic :
     private const string MechanicId = "Equalizer";
     private const string HudTitle = "The Equalizer";
     private const string HudDescription =
-        "All enemies share a single health pool. Damage dealt to any enemy is redistributed across the group, prioritizing those with the highest remaining health percentage. No enemy can fall below 1 HP until the shared pool is depleted. For every 2% of maximum pool health lost, all enemies gain +1% damage dealt and 1% damage reduction. When the pool reaches 0%, every remaining enemy dies.";
+        "All enemies share a single health pool. Damage dealt to any enemy is redistributed across the group, prioritizing those with the highest remaining health percentage. No enemy can fall below 1 HP until the shared pool is depleted. When the pool reaches 0%, every remaining enemy dies.";
     private const string HarmonyId = "ChaosEncounters.Equalizer";
     private const long MaximumSafePool = long.MaxValue / 101L;
+    private static readonly int OutgoingDamageBonusPercentPerTwoPercentPoolLost = 0;
+    private static readonly int IncomingDamageReductionPercentPerTwoPercentPoolLost = 0;
 
     private static EqualizerMechanic ActiveInstance;
     private static bool HooksInstalled;
@@ -34,7 +36,7 @@ internal sealed class EqualizerMechanic :
     private long CurrentPool;
     private int NextRegistrationOrdinal;
     private int DisplayedPercent;
-    private int AppliedBonusPercent;
+    private int AppliedModifierStepCount;
     private int ExternalMutationDepth;
     private int InternalSynchronizationDepth;
     private int CollapseDepth;
@@ -127,7 +129,7 @@ internal sealed class EqualizerMechanic :
         CurrentPool = maximumPool;
         NextRegistrationOrdinal = members.Count;
         DisplayedPercent = -1;
-        AppliedBonusPercent = -1;
+        AppliedModifierStepCount = -1;
         ExternalMutationDepth = 0;
         InternalSynchronizationDepth = 0;
         CollapseDepth = 0;
@@ -1043,10 +1045,21 @@ internal sealed class EqualizerMechanic :
             DisplayedPercent = remainingPercent;
         }
 
-        int bonusPercent =
+        if (OutgoingDamageBonusPercentPerTwoPercentPoolLost == 0 &&
+            IncomingDamageReductionPercentPerTwoPercentPoolLost == 0) {
+            return;
+        }
+
+        int modifierStepCount =
             (100 - remainingPercent) / 2;
         if (rosterChanged ||
-            bonusPercent != AppliedBonusPercent) {
+            modifierStepCount != AppliedModifierStepCount) {
+            int outgoingDamageBonusPercent =
+                modifierStepCount *
+                OutgoingDamageBonusPercentPerTwoPercentPoolLost;
+            int incomingDamageReductionPercent =
+                modifierStepCount *
+                IncomingDamageReductionPercentPerTwoPercentPoolLost;
             for (int index = 0;
                  index < Members.Count;
                  index++) {
@@ -1054,12 +1067,12 @@ internal sealed class EqualizerMechanic :
                     Members[index].Unit;
                 DamageControl.SetOutgoingDamageIncrease(
                     unit,
-                    bonusPercent);
+                    outgoingDamageBonusPercent);
                 DamageControl.SetIncomingDamageReduction(
                     unit,
-                    bonusPercent);
+                    incomingDamageReductionPercent);
             }
-            AppliedBonusPercent = bonusPercent;
+            AppliedModifierStepCount = modifierStepCount;
         }
     }
 
@@ -1343,7 +1356,7 @@ internal sealed class EqualizerMechanic :
         CurrentPool = 0;
         NextRegistrationOrdinal = 0;
         DisplayedPercent = -1;
-        AppliedBonusPercent = -1;
+        AppliedModifierStepCount = -1;
         ExternalRemovalWarningLogged = false;
     }
 
