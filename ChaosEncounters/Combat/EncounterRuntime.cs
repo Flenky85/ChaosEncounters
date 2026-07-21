@@ -259,7 +259,7 @@ internal sealed class EncounterRuntime :
                 leader);
 
             Main.LogInfo(
-                $"Encounter classified: EncounterType={CurrentSession.Type} " +
+                $"Encounter classified: EligibleEncounterTypes={CurrentSession.Type} " +
                 $"InitialEnemyCount={CurrentSession.InitialEnemies.Count} " +
                 $"LeaderName={leader?.CharacterName ?? "None"} " +
                 $"LeaderBlueprint={leader?.Blueprint?.name ?? "None"}");

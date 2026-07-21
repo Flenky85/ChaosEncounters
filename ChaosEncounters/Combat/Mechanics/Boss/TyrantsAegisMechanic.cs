@@ -25,7 +25,8 @@ internal sealed class TyrantsAegisMechanic :
 
     public bool CanActivate(EncounterSession session) {
         return session != null &&
-               session.Type == EncounterType.Boss &&
+               session.SupportsEncounterType(
+                   EncounterType.Boss) &&
                session.Leader != null;
     }
 
@@ -38,9 +39,10 @@ internal sealed class TyrantsAegisMechanic :
             throw new InvalidOperationException(
                 "Tyrant's Aegis is already active.");
         }
-        if (session.Type != EncounterType.Boss) {
+        if (!session.SupportsEncounterType(
+                EncounterType.Boss)) {
             throw new InvalidOperationException(
-                "Tyrant's Aegis requires a Boss encounter.");
+                "Tyrant's Aegis requires Boss encounter eligibility.");
         }
 
         BaseUnitEntity leader = session.Leader;

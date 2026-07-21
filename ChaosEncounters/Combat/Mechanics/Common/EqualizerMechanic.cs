@@ -51,7 +51,8 @@ internal sealed class EqualizerMechanic :
 
     public bool CanActivate(EncounterSession session) {
         if (session == null ||
-            session.Type != EncounterType.Common ||
+            !session.SupportsEncounterType(
+                EncounterType.Common) ||
             session.InitialEnemies.Count == 0) {
             return false;
         }
@@ -80,9 +81,10 @@ internal sealed class EqualizerMechanic :
             throw new InvalidOperationException(
                 "The Equalizer is already active.");
         }
-        if (session.Type != EncounterType.Common) {
+        if (!session.SupportsEncounterType(
+                EncounterType.Common)) {
             throw new InvalidOperationException(
-                "The Equalizer requires a Common encounter.");
+                "The Equalizer requires Common encounter eligibility.");
         }
 
         var members = new List<MemberState>(

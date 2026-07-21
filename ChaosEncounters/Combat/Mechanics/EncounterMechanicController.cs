@@ -41,7 +41,7 @@ internal static class EncounterMechanicController {
                 throw new ArgumentOutOfRangeException(
                     nameof(encounterType),
                     encounterType,
-                    "Unsupported encounter type.");
+                    "Registered mechanics require one exact supported encounter category.");
         }
     }
 
@@ -57,34 +57,35 @@ internal static class EncounterMechanicController {
                 "A different encounter session is already active.");
         }
 
-        IEncounterMechanic[] candidates;
-        switch (session.Type) {
-            case EncounterType.Common:
-                candidates = CommonMechanics;
-                break;
-            case EncounterType.Boss:
-                candidates = BossMechanics;
-                break;
-            default:
-                throw new InvalidOperationException(
-                    $"Unsupported encounter type: {session.Type}.");
+        bool supportsCommon =
+            session.SupportsEncounterType(
+                EncounterType.Common);
+        bool supportsBoss =
+            session.SupportsEncounterType(
+                EncounterType.Boss);
+        if (!supportsCommon && !supportsBoss) {
+            throw new InvalidOperationException(
+                $"Unsupported encounter eligibility: {session.Type}.");
         }
 
         ActiveSession = session;
         int compatibleCandidateCount = 0;
-        for (int index = 0; index < candidates.Length; index++) {
-            IEncounterMechanic candidate = candidates[index];
-            if (candidate != null &&
-                ModSettings.IsEncounterMechanicEnabled(
-                    candidate.Id) &&
-                candidate.CanActivate(session)) {
-                compatibleCandidateCount++;
-            }
+        if (supportsCommon) {
+            compatibleCandidateCount +=
+                CountEnabledCompatibleCandidates(
+                    CommonMechanics,
+                    session);
+        }
+        if (supportsBoss) {
+            compatibleCandidateCount +=
+                CountEnabledCompatibleCandidates(
+                    BossMechanics,
+                    session);
         }
         if (compatibleCandidateCount == 0) {
             Main.LogInfo(
                 $"No enabled compatible encounter mechanic was available: " +
-                $"EncounterType={session.Type}");
+                $"EligibleEncounterTypes={session.Type}");
             return;
         }
 
@@ -105,34 +106,101 @@ internal static class EncounterMechanicController {
         int selectedIndex = -1;
         IEncounterMechanic selectedMechanic = null;
         int compatibleOrdinal = 0;
-        for (int index = 0; index < candidates.Length; index++) {
-            IEncounterMechanic candidate = candidates[index];
-            if (candidate == null ||
-                !ModSettings.IsEncounterMechanicEnabled(
-                    candidate.Id) ||
-                !candidate.CanActivate(session)) {
-                continue;
-            }
-            if (compatibleOrdinal == selectedCompatibleOrdinal) {
-                selectedIndex = index;
-                selectedMechanic = candidate;
-                break;
-            }
-
-            compatibleOrdinal++;
+        EncounterType selectedPool = EncounterType.None;
+        if (supportsCommon &&
+            TryResolveEnabledCompatibleCandidate(
+                CommonMechanics,
+                session,
+                selectedCompatibleOrdinal,
+                ref compatibleOrdinal,
+                out selectedMechanic,
+                out selectedIndex)) {
+            selectedPool = EncounterType.Common;
         }
-        if (selectedMechanic == null || selectedIndex < 0) {
+        if (selectedMechanic == null &&
+            supportsBoss &&
+            TryResolveEnabledCompatibleCandidate(
+                BossMechanics,
+                session,
+                selectedCompatibleOrdinal,
+                ref compatibleOrdinal,
+                out selectedMechanic,
+                out selectedIndex)) {
+            selectedPool = EncounterType.Boss;
+        }
+        if (selectedMechanic == null ||
+            selectedIndex < 0 ||
+            selectedPool == EncounterType.None) {
             throw new InvalidOperationException(
                 "The selected compatible encounter mechanic could not be resolved.");
         }
 
         ActiveMechanic = selectedMechanic;
         Main.LogInfo(
-            $"Encounter mechanic selected: EncounterType={session.Type} " +
+            $"Encounter mechanic selected: EligibleEncounterTypes={session.Type} " +
             $"CandidateCount={compatibleCandidateCount} " +
+            $"SelectedCompatibleOrdinal={selectedCompatibleOrdinal} " +
+            $"SelectedPool={selectedPool} " +
             $"SelectedIndex={selectedIndex} " +
             $"SelectedMechanicId={selectedMechanic.Id}");
         selectedMechanic.Activate(session);
+    }
+
+    private static int CountEnabledCompatibleCandidates(
+        IEncounterMechanic[] candidates,
+        EncounterSession session) {
+        int compatibleCandidateCount = 0;
+        for (int index = 0;
+             index < candidates.Length;
+             index++) {
+            if (IsEnabledCompatibleCandidate(
+                    candidates[index],
+                    session)) {
+                compatibleCandidateCount++;
+            }
+        }
+
+        return compatibleCandidateCount;
+    }
+
+    private static bool TryResolveEnabledCompatibleCandidate(
+        IEncounterMechanic[] candidates,
+        EncounterSession session,
+        int selectedCompatibleOrdinal,
+        ref int compatibleOrdinal,
+        out IEncounterMechanic selectedMechanic,
+        out int selectedIndex) {
+        for (int index = 0;
+             index < candidates.Length;
+             index++) {
+            IEncounterMechanic candidate = candidates[index];
+            if (!IsEnabledCompatibleCandidate(
+                    candidate,
+                    session)) {
+                continue;
+            }
+            if (compatibleOrdinal ==
+                selectedCompatibleOrdinal) {
+                selectedMechanic = candidate;
+                selectedIndex = index;
+                return true;
+            }
+
+            compatibleOrdinal++;
+        }
+
+        selectedMechanic = null;
+        selectedIndex = -1;
+        return false;
+    }
+
+    private static bool IsEnabledCompatibleCandidate(
+        IEncounterMechanic candidate,
+        EncounterSession session) {
+        return candidate != null &&
+               ModSettings.IsEncounterMechanicEnabled(
+                   candidate.Id) &&
+               candidate.CanActivate(session);
     }
 
     internal static void HandleRoundStart(int combatRound) {

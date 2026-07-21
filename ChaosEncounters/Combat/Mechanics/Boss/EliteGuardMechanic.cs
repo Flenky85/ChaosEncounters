@@ -32,7 +32,8 @@ internal sealed class EliteGuardMechanic :
 
     public bool CanActivate(EncounterSession session) {
         if (session == null ||
-            session.Type != EncounterType.Boss ||
+            !session.SupportsEncounterType(
+                EncounterType.Boss) ||
             session.Leader == null) {
             return false;
         }
@@ -65,9 +66,10 @@ internal sealed class EliteGuardMechanic :
             throw new InvalidOperationException(
                 "The Elite Guard is already active.");
         }
-        if (session.Type != EncounterType.Boss) {
+        if (!session.SupportsEncounterType(
+                EncounterType.Boss)) {
             throw new InvalidOperationException(
-                "The Elite Guard requires a Boss encounter.");
+                "The Elite Guard requires Boss encounter eligibility.");
         }
 
         BaseUnitEntity leader = session.Leader;

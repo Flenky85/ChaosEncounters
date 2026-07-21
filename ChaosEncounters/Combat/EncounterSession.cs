@@ -4,9 +4,11 @@ using Kingmaker.EntitySystem.Entities;
 
 namespace ChaosEncounters.Combat;
 
+[Flags]
 internal enum EncounterType {
-    Common,
-    Boss
+    None = 0,
+    Common = 1,
+    Boss = 2
 }
 
 internal sealed class EncounterSession {
@@ -21,6 +23,12 @@ internal sealed class EncounterSession {
         InitialEnemies = initialEnemies.AsReadOnly();
         Type = type;
         Leader = leader;
+    }
+
+    internal bool SupportsEncounterType(
+        EncounterType encounterType) {
+        return encounterType != EncounterType.None &&
+               (Type & encounterType) == encounterType;
     }
 }
 
@@ -75,9 +83,19 @@ internal static class EncounterClassifier {
             }
         }
 
-        if (highestRankValue >= GetKnownRankValue(UnitDifficultyType.Elite) &&
-            highestRankTieCount == 1) {
+        if (highestRankTieCount != 1) {
+            return;
+        }
+
+        if (highestRankValue >=
+            GetKnownRankValue(UnitDifficultyType.Elite)) {
             encounterType = EncounterType.Boss;
+            leader = uniqueHighestRankEnemy;
+        } else if (highestRankValue >=
+                   GetKnownRankValue(UnitDifficultyType.Common)) {
+            encounterType =
+                EncounterType.Common |
+                EncounterType.Boss;
             leader = uniqueHighestRankEnemy;
         }
     }

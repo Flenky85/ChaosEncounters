@@ -24,7 +24,8 @@ internal sealed class WallOfFleshMechanic :
 
     public bool CanActivate(EncounterSession session) {
         return session != null &&
-               session.Type == EncounterType.Boss &&
+               session.SupportsEncounterType(
+                   EncounterType.Boss) &&
                session.Leader != null;
     }
 
@@ -37,9 +38,10 @@ internal sealed class WallOfFleshMechanic :
             throw new InvalidOperationException(
                 "Wall of Flesh is already active.");
         }
-        if (session.Type != EncounterType.Boss) {
+        if (!session.SupportsEncounterType(
+                EncounterType.Boss)) {
             throw new InvalidOperationException(
-                "Wall of Flesh requires a Boss encounter.");
+                "Wall of Flesh requires Boss encounter eligibility.");
         }
 
         BaseUnitEntity leader = session.Leader;

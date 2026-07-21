@@ -31,7 +31,8 @@ internal sealed class RisingVengeanceMechanic :
 
     public bool CanActivate(EncounterSession session) {
         if (session == null ||
-            session.Type != EncounterType.Common) {
+            !session.SupportsEncounterType(
+                EncounterType.Common)) {
             return false;
         }
 
@@ -57,9 +58,10 @@ internal sealed class RisingVengeanceMechanic :
             throw new InvalidOperationException(
                 "Rising Vengeance is already active.");
         }
-        if (session.Type != EncounterType.Common) {
+        if (!session.SupportsEncounterType(
+                EncounterType.Common)) {
             throw new InvalidOperationException(
-                "Rising Vengeance requires a Common encounter.");
+                "Rising Vengeance requires Common encounter eligibility.");
         }
 
         bool hasLivingInitialEnemy = false;

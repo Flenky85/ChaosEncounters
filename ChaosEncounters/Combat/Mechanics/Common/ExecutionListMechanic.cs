@@ -23,7 +23,8 @@ internal sealed class ExecutionListMechanic :
 
     public bool CanActivate(EncounterSession session) {
         if (session == null ||
-            session.Type != EncounterType.Common) {
+            !session.SupportsEncounterType(
+                EncounterType.Common)) {
             return false;
         }
 
@@ -51,9 +52,10 @@ internal sealed class ExecutionListMechanic :
             throw new InvalidOperationException(
                 "The Execution List is already active.");
         }
-        if (session.Type != EncounterType.Common) {
+        if (!session.SupportsEncounterType(
+                EncounterType.Common)) {
             throw new InvalidOperationException(
-                "The Execution List requires a Common encounter.");
+                "The Execution List requires Common encounter eligibility.");
         }
 
         int livingEnemyCount = 0;
