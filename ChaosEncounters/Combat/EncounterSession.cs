@@ -88,7 +88,7 @@ internal static class EncounterClassifier {
         }
 
         if (highestRankValue >=
-            GetKnownRankValue(UnitDifficultyType.Elite)) {
+            GetKnownRankValue(UnitDifficultyType.MiniBoss)) {
             encounterType = EncounterType.Boss;
             leader = uniqueHighestRankEnemy;
         } else if (highestRankValue >=
