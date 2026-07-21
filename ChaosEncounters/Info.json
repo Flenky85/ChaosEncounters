@@ -1,12 +1,12 @@
 ﻿{
   "Id": "ChaosEncounters",
   "DisplayName": "Chaos Encounters",
-  "Author": "",
+  "Author": "Flenky",
   "Version": "1.0.0",
   "ManagerVersion": "0.25.0",
   "Requirements": [],
   "AssemblyName": "ChaosEncounters.dll",
   "EntryMethod": "ChaosEncounters.Main.Load",
-  "HomePage": "",
-  "Repository": ""
+  "HomePage": "https://github.com/Flenky85/ChaosEncounters",
+  "Repository": "https://github.com/Flenky85/ChaosEncounters"
 }
