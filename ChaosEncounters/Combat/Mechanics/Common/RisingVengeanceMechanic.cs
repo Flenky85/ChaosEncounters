@@ -14,12 +14,11 @@ internal sealed class RisingVengeanceMechanic :
     private const string MechanicId = "RisingVengeance";
     private const string HudTitle = "Rising Vengeance";
     private const string HudDescription =
-        "Every fallen enemy strengthens those left behind. When an enemy dies, all surviving enemies, including reinforcements, gain marks equal to the defeated unit's rank, from I to VI, up to 8. Each mark grants +5% damage dealt, 10% damage reduction, and restores 10% of maximum health when gained. All enemies lose 2 marks at the end of each round. Example: a rank II death grants 2 marks; a rank IV death grants 4 marks.";
-    private const int MaximumMarks = 8;
-    private const int OutgoingIncreasePerMark = 5;
-    private const int IncomingReductionPerMark = 10;
-    private const int MarksLostPerRound = 2;
-    private const float HealingFractionPerMark = 0.10f;
+        "Every fallen enemy strengthens those left behind. When an enemy dies, all surviving enemies, including reinforcements, gain marks equal to the defeated unit's rank, from I to VI, accumulating up to 20. Each mark grants +1% damage dealt and 4% damage reduction, and each newly gained mark restores 5% of maximum health. At the end of every round, each enemy loses half of its marks, rounding the number lost down. Example: a rank II death grants 2 marks; a rank IV death grants 4 marks.";
+    private const int MaximumMarks = 20;
+    private const int OutgoingIncreasePerMark = 1;
+    private const int IncomingReductionPerMark = 4;
+    private const float HealingFractionPerMark = 0.05f;
 
     private List<MarkedEnemyState> MarkedEnemies;
     private HashSet<BaseUnitEntity> ProcessedDeaths;
@@ -112,16 +111,20 @@ internal sealed class RisingVengeanceMechanic :
                 continue;
             }
 
-            int newMarks = state.Marks - MarksLostPerRound;
-            if (newMarks <= 0) {
+            int marksLost = state.Marks / 2;
+            int remainingMarks = state.Marks - marksLost;
+            if (remainingMarks <= 0) {
                 markedEnemies.RemoveAt(index);
                 ClearEffects(unit);
                 continue;
             }
+            if (remainingMarks == state.Marks) {
+                continue;
+            }
 
             markedEnemies[index] =
-                new MarkedEnemyState(unit, newMarks);
-            ApplyEffects(unit, newMarks);
+                new MarkedEnemyState(unit, remainingMarks);
+            ApplyEffects(unit, remainingMarks);
         }
     }
 
