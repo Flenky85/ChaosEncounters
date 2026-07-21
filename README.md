@@ -24,26 +24,26 @@ The mechanic remains active until combat ends, it is manually disabled, or a run
 
 ### The Execution List
 
-Enemies are placed in a random ordered list. Damage reduction increases with position: 0%, 20%, 40%, 60%, 80%, and 100% from position six onward. When an enemy dies, all later enemies advance. Reinforcements are appended to the end.
+Every enemy is assigned a position on the Execution List. Position 1 has 0% damage reduction, position 2 has 20%, position 3 has 40%, position 4 has 60%, position 5 has 80%, and positions 6 or higher are immune with 100% damage reduction. When an enemy dies, every enemy behind it moves up one position and its damage reduction is updated accordingly, bringing each survivor one step closer to execution.
 
 ### Rising Vengeance
 
-Each enemy death grants all surviving enemies marks based on the defeated unit's rank. Every mark provides +1% damage, 4% damage reduction, and restores 5% maximum health when gained. Marks are capped at 20 and half are removed at the end of each round.
+Every fallen enemy strengthens those left behind. When an enemy dies, all surviving enemies, including reinforcements, gain marks equal to the defeated unit's rank, from I to VI, accumulating up to 20. Each mark grants +1% damage dealt and 4% damage reduction, and each newly gained mark restores 5% of maximum health. At the end of every round, each enemy loses half of its marks, rounding the number lost down. Example: a rank II death grants 2 marks; a rank IV death grants 4 marks.
 
 ### The Equalizer
 
-All enemies share one combined health pool. Damage is redistributed across the group, prioritizing units with the highest remaining health percentage. No member can fall below 1 HP while pool health remains; when the pool is depleted, all remaining members die. Reinforcements are added to the pool.
+All enemies share a single health pool. Damage dealt to any enemy is redistributed across the group, prioritizing those with the highest remaining health percentage. No enemy can fall below 1 HP until the shared pool is depleted. When the pool reaches 0%, every remaining enemy dies.
 
 ## Boss Mechanics
 
 ### Tyrant's Aegis
 
-All enemies except the Boss are immune to damage while the Boss remains alive. Reinforcements receive the same protection. Killing the Boss removes the effect.
+All other enemies are immune to damage while the Boss remains alive. Kill the Boss to break their protection.
 
 ### Wall of Flesh
 
-The Boss is immune to damage while any subordinate remains alive. Killing every subordinate removes the protection. New reinforcements can restore it while the Boss is still alive.
+The Boss uses its followers as a living shield and remains invulnerable until they are all dead.
 
 ### The Elite Guard
 
-The Boss and two randomly selected initial enemies form a defensive group. All three begin with 60% damage reduction, reduced to 30% after the first group member dies and removed after the second. Both Guards deal 30% increased damage for the entire encounter.
+The Boss and two chosen Guards form an elite defensive unit. The Boss and both Guards begin with 60% damage reduction, which falls to 30% after the first member of the group dies and to 0% after the second. The Guards deal 30% increased damage for the entire encounter.
