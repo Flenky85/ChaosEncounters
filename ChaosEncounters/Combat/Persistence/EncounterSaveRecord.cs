@@ -31,6 +31,7 @@ internal sealed class EncounterMechanicSaveData {
     public RisingVengeanceSaveRecipe RisingVengeance { get; set; }
     public TyrantsAegisSaveRecipe TyrantsAegis { get; set; }
     public WallOfFleshSaveRecipe WallOfFlesh { get; set; }
+    public EliteGuardSaveRecipe EliteGuard { get; set; }
 }
 
 internal sealed class ExecutionListSaveRecipe {
@@ -53,4 +54,10 @@ internal sealed class TyrantsAegisSaveRecipe {
 
 internal sealed class WallOfFleshSaveRecipe {
     public string BossId { get; set; }
+}
+
+internal sealed class EliteGuardSaveRecipe {
+    public string BossId { get; set; }
+    public string GuardOneId { get; set; }
+    public string GuardTwoId { get; set; }
 }

@@ -1,10 +1,12 @@
+using ChaosEncounters.Combat.Persistence;
 using ChaosEncounters.UI;
 using Kingmaker.EntitySystem.Entities;
 
 namespace ChaosEncounters.Combat.Mechanics.Boss;
 
 internal sealed class EliteGuardMechanic :
-    IEncounterMechanic {
+    IEncounterMechanic,
+    IPersistableEncounterMechanic {
     private const string MechanicId = "EliteGuard";
     private const string HudTitle = "The Elite Guard";
     private const string HudDescription =
@@ -17,7 +19,10 @@ internal sealed class EliteGuardMechanic :
 
     private static System.Random GuardSelectionRandom;
 
-    private EncounterSession ActiveSession;
+    private bool Active;
+    private string BossId;
+    private string GuardOneId;
+    private string GuardTwoId;
     private BaseUnitEntity Boss;
     private BaseUnitEntity GuardOne;
     private BaseUnitEntity GuardTwo;
@@ -62,7 +67,7 @@ internal sealed class EliteGuardMechanic :
             throw new InvalidOperationException(
                 "The Elite Guard requires an encounter session.");
         }
-        if (ActiveSession != null) {
+        if (Active) {
             throw new InvalidOperationException(
                 "The Elite Guard is already active.");
         }
@@ -147,7 +152,20 @@ internal sealed class EliteGuardMechanic :
                 "The Elite Guard could not resolve two distinct eligible Guards.");
         }
 
-        ActiveSession = session;
+        string bossId = leader.UniqueId;
+        string guardOneId = guardOne.UniqueId;
+        string guardTwoId = guardTwo.UniqueId;
+        if (!AreValidDistinctIds(
+                bossId,
+                guardOneId,
+                guardTwoId)) {
+            throw new InvalidOperationException(
+                "The Elite Guard requires three distinct persistent member IDs.");
+        }
+
+        BossId = bossId;
+        GuardOneId = guardOneId;
+        GuardTwoId = guardTwoId;
         Boss = leader;
         GuardOne = guardOne;
         GuardTwo = guardTwo;
@@ -155,6 +173,7 @@ internal sealed class EliteGuardMechanic :
         BossDead = false;
         GuardOneDead = false;
         GuardTwoDead = false;
+        Active = true;
 
         DamageControl.SetIncomingDamageReduction(
             Boss,
@@ -217,7 +236,7 @@ internal sealed class EliteGuardMechanic :
     public void HandleEnemyDeath(
         BaseUnitEntity unit,
         int combatRound) {
-        if (ActiveSession == null || unit == null) {
+        if (!Active || unit == null) {
             return;
         }
 
@@ -289,7 +308,10 @@ internal sealed class EliteGuardMechanic :
 
     public void Deactivate(
         EncounterMechanicEndReason reason) {
-        ActiveSession = null;
+        Active = false;
+        BossId = null;
+        GuardOneId = null;
+        GuardTwoId = null;
         Boss = null;
         GuardOne = null;
         GuardTwo = null;
@@ -297,5 +319,299 @@ internal sealed class EliteGuardMechanic :
         BossDead = false;
         GuardOneDead = false;
         GuardTwoDead = false;
+    }
+
+    bool IPersistableEncounterMechanic.TryCaptureSaveData(
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (saveData == null) {
+            failureReason =
+                "The Elite Guard save-data container is unavailable.";
+            return false;
+        }
+        if (saveData.EliteGuard != null) {
+            failureReason =
+                "The Elite Guard save-data container is already populated.";
+            return false;
+        }
+        if (!Active) {
+            failureReason =
+                "The Elite Guard is not active for save capture.";
+            return false;
+        }
+        if (!AreValidDistinctIds(
+                BossId,
+                GuardOneId,
+                GuardTwoId)) {
+            failureReason =
+                "The Elite Guard has invalid or duplicated persistent member IDs.";
+            return false;
+        }
+
+        int expectedGroupDeaths =
+            (BossDead ? 1 : 0) +
+            (GuardOneDead ? 1 : 0) +
+            (GuardTwoDead ? 1 : 0);
+        if (GroupDeaths < 0 ||
+            GroupDeaths > 3 ||
+            GroupDeaths != expectedGroupDeaths) {
+            failureReason =
+                "The Elite Guard death count does not match its member death flags.";
+            return false;
+        }
+        if (!IsCaptureSlotValid(
+                Boss,
+                BossId,
+                BossDead)) {
+            failureReason =
+                "The Elite Guard Boss slot is inconsistent with its saved identity and death state.";
+            return false;
+        }
+        if (!IsCaptureSlotValid(
+                GuardOne,
+                GuardOneId,
+                GuardOneDead)) {
+            failureReason =
+                "The Elite Guard first Guard slot is inconsistent with its saved identity and death state.";
+            return false;
+        }
+        if (!IsCaptureSlotValid(
+                GuardTwo,
+                GuardTwoId,
+                GuardTwoDead)) {
+            failureReason =
+                "The Elite Guard second Guard slot is inconsistent with its saved identity and death state.";
+            return false;
+        }
+
+        saveData.EliteGuard =
+            new EliteGuardSaveRecipe {
+                BossId = BossId,
+                GuardOneId = GuardOneId,
+                GuardTwoId = GuardTwoId
+            };
+        return true;
+    }
+
+    bool IPersistableEncounterMechanic.TryRestoreFromSave(
+        EncounterRestoreContext context,
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (Active ||
+            Boss != null ||
+            GuardOne != null ||
+            GuardTwo != null ||
+            BossId != null ||
+            GuardOneId != null ||
+            GuardTwoId != null ||
+            GroupDeaths != 0 ||
+            BossDead ||
+            GuardOneDead ||
+            GuardTwoDead) {
+            failureReason =
+                "The Elite Guard is already active or retains runtime state.";
+            return false;
+        }
+        if (context == null) {
+            failureReason =
+                "The Elite Guard restore context is unavailable.";
+            return false;
+        }
+        if (saveData == null) {
+            failureReason =
+                "The Elite Guard save-data container is unavailable.";
+            return false;
+        }
+
+        EliteGuardSaveRecipe recipe =
+            saveData.EliteGuard;
+        if (recipe == null) {
+            failureReason =
+                "The Elite Guard save recipe is missing.";
+            return false;
+        }
+        if (!AreValidDistinctIds(
+                recipe.BossId,
+                recipe.GuardOneId,
+                recipe.GuardTwoId)) {
+            failureReason =
+                "The Elite Guard saved member IDs are invalid or duplicated.";
+            return false;
+        }
+
+        bool bossResolved = context.TryResolveEnemy(
+            recipe.BossId,
+            requireLiving: false,
+            out BaseUnitEntity boss);
+        bool guardOneResolved = context.TryResolveEnemy(
+            recipe.GuardOneId,
+            requireLiving: false,
+            out BaseUnitEntity guardOne);
+        bool guardTwoResolved = context.TryResolveEnemy(
+            recipe.GuardTwoId,
+            requireLiving: false,
+            out BaseUnitEntity guardTwo);
+
+        if ((bossResolved &&
+             guardOneResolved &&
+             ReferenceEquals(boss, guardOne)) ||
+            (bossResolved &&
+             guardTwoResolved &&
+             ReferenceEquals(boss, guardTwo)) ||
+            (guardOneResolved &&
+             guardTwoResolved &&
+             ReferenceEquals(guardOne, guardTwo))) {
+            failureReason =
+                "The Elite Guard saved member IDs resolved to aliased entity references.";
+            return false;
+        }
+
+        bool bossDead =
+            !bossResolved ||
+            !IsLivingMember(boss);
+        bool guardOneDead =
+            !guardOneResolved ||
+            !IsLivingMember(guardOne);
+        bool guardTwoDead =
+            !guardTwoResolved ||
+            !IsLivingMember(guardTwo);
+        int groupDeaths =
+            (bossDead ? 1 : 0) +
+            (guardOneDead ? 1 : 0) +
+            (guardTwoDead ? 1 : 0);
+        int incomingReduction =
+            groupDeaths == 0
+                ? InitialIncomingReduction
+                : groupDeaths == 1
+                    ? WeakenedIncomingReduction
+                    : 0;
+        bool showHud =
+            !guardOneDead ||
+            !guardTwoDead;
+
+        BossId = recipe.BossId;
+        GuardOneId = recipe.GuardOneId;
+        GuardTwoId = recipe.GuardTwoId;
+        Boss = boss;
+        GuardOne = guardOne;
+        GuardTwo = guardTwo;
+        BossDead = bossDead;
+        GuardOneDead = guardOneDead;
+        GuardTwoDead = guardTwoDead;
+        GroupDeaths = groupDeaths;
+        Active = true;
+
+        if (!bossDead) {
+            if (incomingReduction > 0) {
+                DamageControl.SetIncomingDamageReduction(
+                    boss,
+                    incomingReduction);
+            }
+            UnitMarker.SetMarker(
+                boss,
+                BossMarker,
+                ChaosColors.Red);
+        }
+        if (!guardOneDead) {
+            if (incomingReduction > 0) {
+                DamageControl.SetIncomingDamageReduction(
+                    guardOne,
+                    incomingReduction);
+            }
+            DamageControl.SetOutgoingDamageIncrease(
+                guardOne,
+                GuardOutgoingIncrease);
+            UnitMarker.SetMarker(
+                guardOne,
+                GuardMarker,
+                ChaosColors.Orange);
+        }
+        if (!guardTwoDead) {
+            if (incomingReduction > 0) {
+                DamageControl.SetIncomingDamageReduction(
+                    guardTwo,
+                    incomingReduction);
+            }
+            DamageControl.SetOutgoingDamageIncrease(
+                guardTwo,
+                GuardOutgoingIncrease);
+            UnitMarker.SetMarker(
+                guardTwo,
+                GuardMarker,
+                ChaosColors.Orange);
+        }
+
+        if (showHud) {
+            EncounterHud.Show(
+                HudTitle,
+                HudDescription);
+        } else {
+            EncounterHud.Hide();
+        }
+
+        Main.LogInfo(
+            $"The Elite Guard restored: " +
+            $"BossAlive={!bossDead} " +
+            $"GuardOneAlive={!guardOneDead} " +
+            $"GuardTwoAlive={!guardTwoDead} " +
+            $"GroupDeaths={groupDeaths} " +
+            $"IncomingReduction={incomingReduction}");
+        return true;
+    }
+
+    private static bool IsCaptureSlotValid(
+        BaseUnitEntity unit,
+        string id,
+        bool dead) {
+        if (unit != null &&
+            !string.Equals(
+                unit.UniqueId,
+                id,
+                StringComparison.Ordinal)) {
+            return false;
+        }
+
+        return dead
+            ? !IsLivingMember(unit)
+            : unit != null && IsLivingMember(unit);
+    }
+
+    private static bool IsLivingMember(
+        BaseUnitEntity unit) {
+        return unit != null &&
+               unit is not StarshipEntity &&
+               !unit.IsDisposed &&
+               unit.IsInGame &&
+               unit.IsInCombat &&
+               unit.IsPlayerEnemy &&
+               unit.LifeState != null &&
+               !unit.LifeState.IsDead &&
+               !unit.LifeState.IsFinallyDead;
+    }
+
+    private static bool AreValidDistinctIds(
+        string bossId,
+        string guardOneId,
+        string guardTwoId) {
+        return EncounterPersistenceValidation
+                   .IsValidEntityId(bossId) &&
+               EncounterPersistenceValidation
+                   .IsValidEntityId(guardOneId) &&
+               EncounterPersistenceValidation
+                   .IsValidEntityId(guardTwoId) &&
+               !string.Equals(
+                   bossId,
+                   guardOneId,
+                   StringComparison.Ordinal) &&
+               !string.Equals(
+                   bossId,
+                   guardTwoId,
+                   StringComparison.Ordinal) &&
+               !string.Equals(
+                   guardOneId,
+                   guardTwoId,
+                   StringComparison.Ordinal);
     }
 }
