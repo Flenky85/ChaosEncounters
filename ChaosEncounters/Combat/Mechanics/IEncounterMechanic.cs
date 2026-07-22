@@ -36,5 +36,7 @@ internal interface IEnemyJoinAwareMechanic {
 internal enum EncounterMechanicEndReason {
     CombatEnded,
     RuntimeFault,
-    ManualEmergencyDisable
+    ManualEmergencyDisable,
+    AreaUnloading,
+    LoadedStateReplaced
 }

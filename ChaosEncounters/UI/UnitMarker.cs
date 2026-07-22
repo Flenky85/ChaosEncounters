@@ -105,6 +105,28 @@ internal static class UnitMarker {
         }
     }
 
+    internal static void ResetForAreaUnload() {
+        ClearAllMarkers();
+        try {
+            foreach (KeyValuePair<BaseUnitEntity, OvertipUnitPCView> binding
+                     in ActiveViews) {
+                UnitMarkerHost host =
+                    binding.Value?.GetComponent<UnitMarkerHost>();
+                if (host != null &&
+                    ReferenceEquals(host.BoundUnit, binding.Key)) {
+                    host.ClearBinding();
+                }
+            }
+        } catch (Exception exception) {
+            LogPresentationFailureOnce(
+                "area-unload reset",
+                exception);
+        } finally {
+            ActiveViews.Clear();
+            PresentationFailureLogged = false;
+        }
+    }
+
     internal static void HandleBind(OvertipUnitView view) {
         if (view is not OvertipUnitPCView pcView) {
             return;

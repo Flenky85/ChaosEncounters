@@ -1,4 +1,6 @@
 using ChaosEncounters.Combat.Mechanics;
+using ChaosEncounters.Combat.Persistence;
+using ChaosEncounters.UI;
 using Kingmaker;
 using Kingmaker.Controllers.TurnBased;
 using Kingmaker.EntitySystem.Entities;
@@ -23,6 +25,7 @@ internal sealed class EncounterRuntime :
     private static bool DuplicateStartWarningLogged;
     private static bool RuntimeFaulted;
     private static bool RuntimeFaultLogged;
+    private static EncounterSaveLifecycle? Lifecycle;
 
     internal static void Initialize() {
         if (!EventBus.IsGloballySubscribed(Instance)) {
@@ -50,6 +53,14 @@ internal sealed class EncounterRuntime :
                 SessionActivated = true;
                 EncounterMechanicController.Activate(
                     CurrentSession);
+                if (Lifecycle ==
+                    EncounterSaveLifecycle.PendingActivation) {
+                    Lifecycle = EncounterMechanicController
+                        .HasActiveMechanic
+                        ? EncounterSaveLifecycle.Active
+                        : EncounterSaveLifecycle
+                            .NoCompatibleCandidate;
+                }
                 ForwardPendingEnemyJoins();
             }
 
@@ -215,6 +226,13 @@ internal sealed class EncounterRuntime :
             return;
         }
 
+        if (CurrentSession == null &&
+            SessionActivated &&
+            Lifecycle ==
+                EncounterSaveLifecycle.DisabledForCombat) {
+            return;
+        }
+
         try {
             if (CurrentSession != null) {
                 if (!DuplicateStartWarningLogged) {
@@ -257,6 +275,7 @@ internal sealed class EncounterRuntime :
                 initialEnemies,
                 encounterType,
                 leader);
+            Lifecycle = EncounterSaveLifecycle.PendingActivation;
 
             Main.LogInfo(
                 $"Encounter classified: EligibleEncounterTypes={CurrentSession.Type} " +
@@ -283,8 +302,247 @@ internal sealed class EncounterRuntime :
                 $"{nameof(HandlePartyCombatStateChanged)}(false)",
                 exception);
         } finally {
-            ClearRuntimeState();
+            ClearRuntimeState(
+                EncounterMechanicEndReason.CombatEnded);
         }
+    }
+
+    internal static void MarkDisabledForCurrentCombat() {
+        if (CurrentSession == null) {
+            return;
+        }
+
+        SessionActivated = true;
+        Lifecycle = EncounterSaveLifecycle.DisabledForCombat;
+    }
+
+    internal static bool TryCreateSaveRecord(
+        out EncounterSaveRecord record,
+        out string failureReason) {
+        record = null;
+        failureReason = null;
+        EncounterSession session = CurrentSession;
+        if (session == null) {
+            return false;
+        }
+        if (!Lifecycle.HasValue) {
+            failureReason =
+                "an encounter session exists without a lifecycle";
+            return false;
+        }
+
+        EncounterSaveLifecycle lifecycle = Lifecycle.Value;
+        if ((lifecycle ==
+             EncounterSaveLifecycle.PendingActivation) ==
+            SessionActivated) {
+            failureReason =
+                "the encounter activation flag does not match its lifecycle";
+            return false;
+        }
+
+        string mechanicId =
+            EncounterMechanicController.ActiveMechanicId;
+        if (lifecycle == EncounterSaveLifecycle.Active) {
+            if (string.IsNullOrWhiteSpace(mechanicId)) {
+                failureReason =
+                    "the active encounter has no mechanic ID";
+                return false;
+            }
+        } else if (mechanicId != null) {
+            failureReason =
+                "a non-active encounter still owns a mechanic";
+            return false;
+        }
+
+        var initialEnemyIds = new List<string>(
+            session.InitialEnemies.Count);
+        var allIds = new HashSet<string>(
+            StringComparer.Ordinal);
+        bool leaderMatchesSession = session.Leader == null;
+        for (int index = 0;
+             index < session.InitialEnemies.Count;
+             index++) {
+            BaseUnitEntity unit = session.InitialEnemies[index];
+            string id = unit?.UniqueId;
+            if (string.IsNullOrWhiteSpace(id)) {
+                failureReason =
+                    $"initial enemy at index {index} has no persistent ID";
+                return false;
+            }
+            if (!allIds.Add(id)) {
+                failureReason =
+                    $"initial enemy at index {index} has a duplicate persistent ID";
+                return false;
+            }
+            initialEnemyIds.Add(id);
+            if (ReferenceEquals(unit, session.Leader)) {
+                leaderMatchesSession = true;
+            }
+        }
+        if (initialEnemyIds.Count == 0) {
+            failureReason =
+                "the encounter session has no initial enemies";
+            return false;
+        }
+
+        string leaderId = session.Leader?.UniqueId;
+        if (session.Leader != null) {
+            if (string.IsNullOrWhiteSpace(leaderId)) {
+                failureReason =
+                    "the encounter leader has no persistent ID";
+                return false;
+            }
+
+            if (!leaderMatchesSession ||
+                !allIds.Contains(leaderId)) {
+                failureReason =
+                    "the encounter leader does not match the initial snapshot";
+                return false;
+            }
+        }
+
+        List<BaseUnitEntity> pendingEnemyJoins =
+            PendingEnemyJoins;
+        int pendingCount = pendingEnemyJoins?.Count ?? 0;
+        var pendingEnemyJoinIds = new List<string>(
+            pendingCount);
+        for (int index = 0;
+             index < pendingCount;
+             index++) {
+            BaseUnitEntity unit = pendingEnemyJoins[index];
+            string id = unit?.UniqueId;
+            if (string.IsNullOrWhiteSpace(id)) {
+                failureReason =
+                    $"pending enemy at index {index} has no persistent ID";
+                return false;
+            }
+            if (!allIds.Add(id)) {
+                failureReason =
+                    $"pending enemy at index {index} duplicates another persisted entity ID";
+                return false;
+            }
+            pendingEnemyJoinIds.Add(id);
+        }
+
+        record = new EncounterSaveRecord {
+            SchemaVersion =
+                EncounterSaveRecord.CurrentSchemaVersion,
+            Lifecycle = lifecycle,
+            EncounterType = session.Type,
+            MechanicId = lifecycle ==
+                EncounterSaveLifecycle.Active
+                ? mechanicId
+                : null,
+            LeaderId = leaderId,
+            InitialEnemyIds = initialEnemyIds,
+            PendingEnemyJoinIds = pendingEnemyJoinIds
+        };
+        return true;
+    }
+
+    internal static void RestoreSaveRecord(
+        EncounterSaveRecord record,
+        List<BaseUnitEntity> initialEnemies,
+        BaseUnitEntity leader,
+        List<BaseUnitEntity> pendingEnemyJoins) {
+        if (record == null) {
+            throw new ArgumentNullException(nameof(record));
+        }
+        if (initialEnemies == null) {
+            throw new ArgumentNullException(nameof(initialEnemies));
+        }
+        if (pendingEnemyJoins == null) {
+            throw new ArgumentNullException(
+                nameof(pendingEnemyJoins));
+        }
+
+        EncounterMechanicController.Deactivate(
+            EncounterMechanicEndReason.LoadedStateReplaced);
+        CurrentSession = new EncounterSession(
+            initialEnemies,
+            record.EncounterType,
+            leader);
+        PendingEnemyJoins = pendingEnemyJoins.Count == 0
+            ? null
+            : pendingEnemyJoins;
+        DuplicateStartWarningLogged = false;
+        RuntimeFaultLogged = false;
+
+        if (record.Lifecycle ==
+            EncounterSaveLifecycle.PendingActivation) {
+            SessionActivated = false;
+            RuntimeFaulted = false;
+            Lifecycle = EncounterSaveLifecycle.PendingActivation;
+            return;
+        }
+
+        SessionActivated = true;
+        RuntimeFaulted = record.Lifecycle ==
+            EncounterSaveLifecycle.RuntimeFaulted;
+        Lifecycle = record.Lifecycle ==
+            EncounterSaveLifecycle.Active
+            ? EncounterSaveLifecycle.DisabledForCombat
+            : record.Lifecycle;
+    }
+
+    internal static void SuppressLoadedCombat() {
+        EncounterSession provisionalSession =
+            IsValidLoadedSession(CurrentSession)
+                ? CurrentSession
+                : null;
+        EncounterMechanicController.Deactivate(
+            EncounterMechanicEndReason.LoadedStateReplaced);
+        CurrentSession = provisionalSession;
+        PendingEnemyJoins = null;
+        SessionActivated = true;
+        DuplicateStartWarningLogged = false;
+        RuntimeFaulted = false;
+        RuntimeFaultLogged = false;
+        Lifecycle = EncounterSaveLifecycle.DisabledForCombat;
+    }
+
+    internal static void ResetForAreaUnload() {
+        try {
+            ClearRuntimeState(
+                EncounterMechanicEndReason.AreaUnloading);
+        } finally {
+            DamageControl.ClearAllPolicies();
+            UnitMarker.ResetForAreaUnload();
+            EncounterHud.ResetForAreaUnload();
+        }
+    }
+
+    internal static void ResetForLoadedState() {
+        ClearRuntimeState(
+            EncounterMechanicEndReason.LoadedStateReplaced);
+    }
+
+    private static bool IsValidLoadedSession(
+        EncounterSession session) {
+        if (session == null ||
+            session.InitialEnemies.Count == 0) {
+            return false;
+        }
+
+        bool leaderFound = session.Leader == null;
+        for (int index = 0;
+             index < session.InitialEnemies.Count;
+             index++) {
+            BaseUnitEntity unit = session.InitialEnemies[index];
+            if (unit == null ||
+                unit is StarshipEntity ||
+                unit.IsDisposed ||
+                !unit.IsInGame ||
+                !unit.IsPlayerEnemy ||
+                string.IsNullOrWhiteSpace(unit.UniqueId)) {
+                return false;
+            }
+            if (ReferenceEquals(unit, session.Leader)) {
+                leaderFound = true;
+            }
+        }
+
+        return leaderFound;
     }
 
     private static void ForwardPendingEnemyJoins() {
@@ -311,10 +569,9 @@ internal sealed class EncounterRuntime :
         Exception exception) {
         EncounterMechanicController.Deactivate(
             EncounterMechanicEndReason.RuntimeFault);
-        CurrentSession = null;
-        PendingEnemyJoins = null;
-        SessionActivated = false;
+        SessionActivated = true;
         RuntimeFaulted = true;
+        Lifecycle = EncounterSaveLifecycle.RuntimeFaulted;
 
         if (!RuntimeFaultLogged) {
             RuntimeFaultLogged = true;
@@ -323,14 +580,16 @@ internal sealed class EncounterRuntime :
         }
     }
 
-    private static void ClearRuntimeState() {
+    private static void ClearRuntimeState(
+        EncounterMechanicEndReason reason) {
         EncounterMechanicController.Deactivate(
-            EncounterMechanicEndReason.CombatEnded);
+            reason);
         CurrentSession = null;
         PendingEnemyJoins = null;
         SessionActivated = false;
         DuplicateStartWarningLogged = false;
         RuntimeFaulted = false;
         RuntimeFaultLogged = false;
+        Lifecycle = null;
     }
 }

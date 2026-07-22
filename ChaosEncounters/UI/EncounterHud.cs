@@ -57,6 +57,14 @@ internal static class EncounterHud {
         DestroyCurrentIndicator(preserveHudReference: true);
     }
 
+    internal static void ResetForAreaUnload() {
+        ActiveTitle = null;
+        ActiveDescription = null;
+        DestroyCurrentIndicator(preserveHudReference: false);
+        CurrentHud = null;
+        PresentationFailureLogged = false;
+    }
+
     internal static void HandleHudBound(SurfaceHUDPCView hud) {
         if (hud == null) {
             return;

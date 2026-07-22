@@ -1,4 +1,5 @@
 ﻿using ChaosEncounters.Combat;
+using ChaosEncounters.Combat.Persistence;
 using ChaosEncounters.Configuration;
 using ChaosEncounters.Logging;
 using ChaosEncounters.UI;
@@ -16,6 +17,7 @@ public static class Main {
         ModSettings.Initialize(modEntry.Path);
         modEntry.OnGUI = OnGUI;
         EncounterRuntime.Initialize();
+        EncounterPersistence.Initialize();
         DamageControl.Initialize();
         HitPointRestoration.Initialize();
         EncounterHud.Initialize();

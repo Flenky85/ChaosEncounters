@@ -27,6 +27,9 @@ internal static class EncounterMechanicController {
     internal static bool HasActiveMechanic =>
         ActiveMechanic != null;
 
+    internal static string ActiveMechanicId =>
+        ActiveMechanic?.Id;
+
     internal static bool HasEnemyJoinAwareMechanic =>
         ActiveMechanic is IEnemyJoinAwareMechanic;
 
@@ -269,6 +272,7 @@ internal static class EncounterMechanicController {
         CleanupMechanic(
             mechanic,
             EncounterMechanicEndReason.ManualEmergencyDisable);
+        EncounterRuntime.MarkDisabledForCurrentCombat();
         Main.LogWarning(
             $"Encounter mechanic disabled for the current combat: " +
             $"MechanicId={mechanicId}");
