@@ -1,8 +1,6 @@
 using System.Collections.Generic;
 using ChaosEncounters.Combat.Persistence;
 using ChaosEncounters.UI;
-using Kingmaker;
-using Kingmaker.EntitySystem;
 using Kingmaker.EntitySystem.Entities;
 using UnityEngine;
 
@@ -10,10 +8,9 @@ namespace ChaosEncounters.Combat.Mechanics.Common;
 
 internal sealed class ExecutionListMechanic :
     IEncounterMechanic,
-    IEnemyJoinAwareMechanic {
-    internal const string MechanicId = "ExecutionList";
-    private const int MaximumPersistedEnemyCount = 4096;
-    private const int MaximumEntityIdLength = 1024;
+    IEnemyJoinAwareMechanic,
+    IPersistableEncounterMechanic {
+    private const string MechanicId = "ExecutionList";
     private const string HudTitle = "The Execution List";
     private const string HudDescription =
         "Every enemy is assigned a position on the Execution List. Position 1 has 0% damage reduction, position 2 has 20%, position 3 has 40%, position 4 has 60%, position 5 has 80%, and positions 6 or higher are immune with 100% damage reduction. When an enemy dies, every enemy behind it moves up one position and its damage reduction is updated accordingly, bringing each survivor one step closer to execution.";
@@ -237,20 +234,31 @@ internal sealed class ExecutionListMechanic :
         OrderedEnemies = null;
     }
 
-    internal bool TryCreateSaveRecipe(
-        out ExecutionListSaveRecipe recipe,
+    bool IPersistableEncounterMechanic.TryCaptureSaveData(
+        EncounterMechanicSaveData saveData,
         out string failureReason) {
-        recipe = null;
         failureReason = null;
+        if (saveData == null) {
+            failureReason =
+                "The Execution List save-data container is unavailable.";
+            return false;
+        }
+        if (saveData.ExecutionList != null) {
+            failureReason =
+                "The Execution List save-data container is already populated.";
+            return false;
+        }
+
         List<BaseUnitEntity> orderedEnemies = OrderedEnemies;
         if (orderedEnemies == null) {
             failureReason =
                 "The Execution List ordered enemy list is unavailable.";
             return false;
         }
-        if (orderedEnemies.Count > MaximumPersistedEnemyCount) {
+        if (orderedEnemies.Count >
+            EncounterPersistenceValidation.MaximumEntityCount) {
             failureReason =
-                $"The Execution List ordered enemy count exceeds {MaximumPersistedEnemyCount}.";
+                $"The Execution List ordered enemy count exceeds {EncounterPersistenceValidation.MaximumEntityCount}.";
             return false;
         }
 
@@ -262,7 +270,8 @@ internal sealed class ExecutionListMechanic :
              index < orderedEnemies.Count;
              index++) {
             string id = orderedEnemies[index]?.UniqueId;
-            if (!IsValidPersistedId(id)) {
+            if (!EncounterPersistenceValidation
+                    .IsValidEntityId(id)) {
                 failureReason =
                     $"The Execution List enemy at index {index} has an invalid persistent ID.";
                 return false;
@@ -275,7 +284,7 @@ internal sealed class ExecutionListMechanic :
             orderedEnemyIds.Add(id);
         }
 
-        recipe = new ExecutionListSaveRecipe {
+        saveData.ExecutionList = new ExecutionListSaveRecipe {
             OrderedEnemyIds = orderedEnemyIds
         };
         Main.LogInfo(
@@ -284,9 +293,9 @@ internal sealed class ExecutionListMechanic :
         return true;
     }
 
-    internal bool TryRestore(
-        EncounterSession session,
-        ExecutionListSaveRecipe recipe,
+    bool IPersistableEncounterMechanic.TryRestoreFromSave(
+        EncounterRestoreContext context,
+        EncounterMechanicSaveData saveData,
         out string failureReason) {
         failureReason = null;
         if (OrderedEnemies != null) {
@@ -294,17 +303,19 @@ internal sealed class ExecutionListMechanic :
                 "The Execution List is already active.";
             return false;
         }
-        if (session == null) {
+        if (context?.Session == null) {
             failureReason =
                 "The Execution List restore has no encounter session.";
             return false;
         }
-        if (!session.SupportsEncounterType(
+        if (!context.Session.SupportsEncounterType(
                 EncounterType.Common)) {
             failureReason =
                 "The persisted encounter does not support The Execution List.";
             return false;
         }
+        ExecutionListSaveRecipe recipe =
+            saveData?.ExecutionList;
         if (recipe == null) {
             failureReason =
                 "The Execution List save recipe is missing.";
@@ -316,9 +327,10 @@ internal sealed class ExecutionListMechanic :
                 "The Execution List ordered enemy ID list is missing.";
             return false;
         }
-        if (savedIds.Count > MaximumPersistedEnemyCount) {
+        if (savedIds.Count >
+            EncounterPersistenceValidation.MaximumEntityCount) {
             failureReason =
-                $"The Execution List ordered enemy ID count exceeds {MaximumPersistedEnemyCount}.";
+                $"The Execution List ordered enemy ID count exceeds {EncounterPersistenceValidation.MaximumEntityCount}.";
             return false;
         }
 
@@ -328,7 +340,8 @@ internal sealed class ExecutionListMechanic :
              index < savedIds.Count;
              index++) {
             string id = savedIds[index];
-            if (!IsValidPersistedId(id)) {
+            if (!EncounterPersistenceValidation
+                    .IsValidEntityId(id)) {
                 failureReason =
                     $"The Execution List saved ID at index {index} is invalid.";
                 return false;
@@ -340,63 +353,34 @@ internal sealed class ExecutionListMechanic :
             }
         }
 
-        EntityService entityService = EntityService.Instance;
-        if (entityService == null) {
-            failureReason =
-                "EntityService is unavailable during The Execution List restoration.";
-            return false;
-        }
-
         var restoredEnemies = new List<BaseUnitEntity>(
-            savedIds.Count);
+            context.LivingEnemies.Count);
+        var restoredIds = new HashSet<string>(
+            StringComparer.Ordinal);
         int resolvedSavedCount = 0;
         for (int index = 0;
              index < savedIds.Count;
              index++) {
             string savedId = savedIds[index];
-            BaseUnitEntity unit =
-                entityService.GetEntity<BaseUnitEntity>(
-                    savedId);
-            if (!IsValidLivingCombatEnemy(unit) ||
-                !string.Equals(
-                    unit.UniqueId,
+            if (!context.TryResolveEnemy(
                     savedId,
-                    StringComparison.Ordinal)) {
+                    requireLiving: true,
+                    out BaseUnitEntity unit)) {
                 continue;
             }
 
             restoredEnemies.Add(unit);
+            restoredIds.Add(savedId);
             resolvedSavedCount++;
         }
 
-        Game game = Game.Instance;
-        if (game?.State?.AllBaseAwakeUnitsForSure == null) {
-            failureReason =
-                "The loaded awake-unit collection is unavailable during The Execution List restoration.";
-            return false;
-        }
-
-        int currentLivingEnemyCount = 0;
         int appendedCurrentEnemyCount = 0;
-        foreach (BaseUnitEntity candidate in
-            game.State.AllBaseAwakeUnitsForSure) {
-            if (!IsValidLivingCombatEnemy(candidate)) {
-                continue;
-            }
-
-            currentLivingEnemyCount++;
-            bool alreadyRestored = false;
-            for (int index = 0;
-                 index < restoredEnemies.Count;
-                 index++) {
-                if (ReferenceEquals(
-                        restoredEnemies[index],
-                        candidate)) {
-                    alreadyRestored = true;
-                    break;
-                }
-            }
-            if (alreadyRestored) {
+        for (int index = 0;
+             index < context.LivingEnemies.Count;
+             index++) {
+            BaseUnitEntity candidate =
+                context.LivingEnemies[index];
+            if (!restoredIds.Add(candidate.UniqueId)) {
                 continue;
             }
 
@@ -405,7 +389,7 @@ internal sealed class ExecutionListMechanic :
         }
 
         if (resolvedSavedCount == 0 &&
-            currentLivingEnemyCount > 0) {
+            context.LivingEnemies.Count > 0) {
             failureReason =
                 "No saved Execution List enemy could be reconstructed while the loaded combat still contains living enemies.";
             return false;
@@ -438,24 +422,6 @@ internal sealed class ExecutionListMechanic :
             $"AppendedCurrentEnemyCount={appendedCurrentEnemyCount} " +
             $"RestoredEnemyCount={restoredEnemies.Count}");
         return true;
-    }
-
-    private static bool IsValidPersistedId(string id) {
-        return !string.IsNullOrWhiteSpace(id) &&
-               id.Length <= MaximumEntityIdLength;
-    }
-
-    private static bool IsValidLivingCombatEnemy(
-        BaseUnitEntity unit) {
-        return unit != null &&
-               unit is not StarshipEntity &&
-               !unit.IsDisposed &&
-               unit.IsInGame &&
-               unit.IsInCombat &&
-               unit.IsPlayerEnemy &&
-               unit.LifeState != null &&
-               !unit.LifeState.IsDead &&
-               !unit.LifeState.IsFinallyDead;
     }
 
     private static void ApplyPosition(

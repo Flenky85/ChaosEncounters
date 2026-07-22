@@ -9,24 +9,27 @@ internal enum EncounterSaveLifecycle {
 }
 
 internal sealed class EncounterSaveRecord {
-    internal const int CurrentSchemaVersion = 1;
-
-    public EncounterSaveRecord() {
-    }
+    internal const int CurrentSchemaVersion = 2;
 
     public int SchemaVersion { get; set; }
     public EncounterSaveLifecycle Lifecycle { get; set; }
     public EncounterType EncounterType { get; set; }
     public string MechanicId { get; set; }
+
+    public PendingActivationSaveData PendingActivation { get; set; }
+    public EncounterMechanicSaveData MechanicData { get; set; }
+}
+
+internal sealed class PendingActivationSaveData {
     public string LeaderId { get; set; }
     public List<string> InitialEnemyIds { get; set; }
     public List<string> PendingEnemyJoinIds { get; set; }
-    public ExecutionListSaveRecipe ExecutionListRecipe { get; set; }
+}
+
+internal sealed class EncounterMechanicSaveData {
+    public ExecutionListSaveRecipe ExecutionList { get; set; }
 }
 
 internal sealed class ExecutionListSaveRecipe {
-    public ExecutionListSaveRecipe() {
-    }
-
     public List<string> OrderedEnemyIds { get; set; }
 }

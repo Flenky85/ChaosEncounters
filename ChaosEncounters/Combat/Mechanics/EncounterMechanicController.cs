@@ -10,11 +10,8 @@ namespace ChaosEncounters.Combat.Mechanics;
 internal static class EncounterMechanicController {
     private static System.Random SelectionRandom;
 
-    private static readonly ExecutionListMechanic
-        ExecutionListMechanicInstance = new();
-
     private static readonly IEncounterMechanic[] CommonMechanics = {
-        ExecutionListMechanicInstance,
+        new ExecutionListMechanic(),
         new RisingVengeanceMechanic(),
         new EqualizerMechanic()
     };
@@ -33,14 +30,6 @@ internal static class EncounterMechanicController {
 
     internal static string ActiveMechanicId =>
         ActiveMechanic?.Id;
-
-    internal static bool IsExecutionListMechanicId(
-        string mechanicId) {
-        return string.Equals(
-            mechanicId,
-            ExecutionListMechanic.MechanicId,
-            StringComparison.Ordinal);
-    }
 
     internal static bool HasEnemyJoinAwareMechanic =>
         ActiveMechanic is IEnemyJoinAwareMechanic;
@@ -291,69 +280,123 @@ internal static class EncounterMechanicController {
         return true;
     }
 
-    internal static bool TryCreateExecutionListSaveRecipe(
-        out ExecutionListSaveRecipe recipe,
+    internal static bool TryCaptureActiveMechanicData(
+        EncounterMechanicSaveData saveData,
+        out bool persistenceSupported,
         out string failureReason) {
-        if (!ReferenceEquals(
-                ActiveMechanic,
-                ExecutionListMechanicInstance)) {
-            recipe = null;
-            failureReason =
-                "The active mechanic is not the registered Execution List instance.";
-            return false;
-        }
-
-        return ExecutionListMechanicInstance
-            .TryCreateSaveRecipe(
-                out recipe,
-                out failureReason);
-    }
-
-    internal static bool TryRestoreExecutionList(
-        EncounterSession session,
-        ExecutionListSaveRecipe recipe,
-        out bool disabledInSettings,
-        out string failureReason) {
-        disabledInSettings = false;
+        persistenceSupported = false;
         failureReason = null;
-        if (session == null) {
+        if (saveData == null) {
             failureReason =
-                "The Execution List restore has no encounter session.";
-            return false;
-        }
-        if (ActiveSession != null || ActiveMechanic != null) {
-            failureReason =
-                "An encounter mechanic is already owned during The Execution List restoration.";
-            return false;
-        }
-        if (!ModSettings.IsEncounterMechanicEnabled(
-                ExecutionListMechanic.MechanicId)) {
-            disabledInSettings = true;
-            failureReason =
-                "The Execution List is disabled in the current mod settings.";
+                "The active mechanic save-data container is unavailable.";
             return false;
         }
 
-        ActiveSession = session;
-        ActiveMechanic = ExecutionListMechanicInstance;
+        IEncounterMechanic mechanic = ActiveMechanic;
+        if (mechanic == null || ActiveSession == null) {
+            failureReason =
+                "The active mechanic controller ownership is incomplete.";
+            return false;
+        }
+        IEncounterMechanic registered =
+            FindRegisteredMechanic(mechanic.Id);
+        if (!ReferenceEquals(mechanic, registered)) {
+            failureReason =
+                "The active mechanic is not the exact registered mechanic instance.";
+            return false;
+        }
+        if (mechanic is not
+            IPersistableEncounterMechanic persistable) {
+            return true;
+        }
+
+        persistenceSupported = true;
         try {
-            if (ExecutionListMechanicInstance.TryRestore(
-                    session,
-                    recipe,
+            if (persistable.TryCaptureSaveData(
+                    saveData,
                     out failureReason)) {
                 return true;
             }
+            if (string.IsNullOrWhiteSpace(failureReason)) {
+                failureReason =
+                    $"Mechanic {mechanic.Id} did not provide a save recipe.";
+            }
         } catch (Exception exception) {
             failureReason =
-                $"The Execution List restoration threw an exception: {exception}";
+                $"Mechanic {mechanic.Id} save capture threw an exception: {exception}";
+        }
+
+        return false;
+    }
+
+    internal static EncounterMechanicRestoreStatus
+        TryRestoreActiveMechanic(
+        string mechanicId,
+        EncounterRestoreContext context,
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (string.IsNullOrWhiteSpace(mechanicId)) {
+            failureReason =
+                "The active mechanic ID is invalid.";
+            return EncounterMechanicRestoreStatus.Invalid;
+        }
+        if (context?.Session == null || saveData == null) {
+            failureReason =
+                "The active mechanic restore context or save data is unavailable.";
+            return EncounterMechanicRestoreStatus.Invalid;
+        }
+
+        IEncounterMechanic mechanic =
+            FindRegisteredMechanic(mechanicId);
+        if (mechanic == null) {
+            failureReason =
+                $"Mechanic ID {mechanicId} is not registered.";
+            return EncounterMechanicRestoreStatus.Unsupported;
+        }
+        if (!ModSettings.IsEncounterMechanicEnabled(
+                mechanic.Id)) {
+            failureReason =
+                $"Mechanic {mechanic.Id} is disabled in the current mod settings.";
+            return EncounterMechanicRestoreStatus
+                .DisabledInSettings;
+        }
+        if (mechanic is not
+            IPersistableEncounterMechanic persistable) {
+            failureReason =
+                $"Mechanic {mechanic.Id} does not implement save restoration.";
+            return EncounterMechanicRestoreStatus.Unsupported;
+        }
+        if (ActiveSession != null || ActiveMechanic != null) {
+            failureReason =
+                "An encounter mechanic is already owned during active restoration.";
+            return EncounterMechanicRestoreStatus.Invalid;
+        }
+
+        ActiveSession = context.Session;
+        ActiveMechanic = mechanic;
+        try {
+            if (persistable.TryRestoreFromSave(
+                    context,
+                    saveData,
+                    out failureReason)) {
+                return EncounterMechanicRestoreStatus.Restored;
+            }
+            if (string.IsNullOrWhiteSpace(failureReason)) {
+                failureReason =
+                    $"Mechanic {mechanic.Id} rejected its saved state.";
+            }
+        } catch (Exception exception) {
+            failureReason =
+                $"Mechanic {mechanic.Id} restoration threw an exception: {exception}";
         }
 
         ActiveMechanic = null;
         ActiveSession = null;
         CleanupMechanic(
-            ExecutionListMechanicInstance,
+            mechanic,
             EncounterMechanicEndReason.LoadedStateReplaced);
-        return false;
+        return EncounterMechanicRestoreStatus.Invalid;
     }
 
     internal static void Deactivate(
@@ -382,5 +425,41 @@ internal static class EncounterMechanicController {
             UnitMarker.ClearAllMarkers();
             EncounterHud.Hide();
         }
+    }
+
+    private static IEncounterMechanic FindRegisteredMechanic(
+        string mechanicId) {
+        if (string.IsNullOrWhiteSpace(mechanicId)) {
+            return null;
+        }
+
+        for (int index = 0;
+             index < CommonMechanics.Length;
+             index++) {
+            IEncounterMechanic mechanic =
+                CommonMechanics[index];
+            if (mechanic != null &&
+                string.Equals(
+                    mechanic.Id,
+                    mechanicId,
+                    StringComparison.Ordinal)) {
+                return mechanic;
+            }
+        }
+        for (int index = 0;
+             index < BossMechanics.Length;
+             index++) {
+            IEncounterMechanic mechanic =
+                BossMechanics[index];
+            if (mechanic != null &&
+                string.Equals(
+                    mechanic.Id,
+                    mechanicId,
+                    StringComparison.Ordinal)) {
+                return mechanic;
+            }
+        }
+
+        return null;
     }
 }

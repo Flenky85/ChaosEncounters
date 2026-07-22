@@ -15,8 +15,6 @@ internal sealed class EncounterPersistence :
     IAreaLoadingStagesHandler {
     private const string SaveKey = "ChaosEncounters.SaveState";
     private const string HarmonyId = "ChaosEncounters.Persistence";
-    private const int MaximumEntityCount = 4096;
-    private const int MaximumEntityIdLength = 1024;
 
     private static readonly EncounterPersistence Instance = new();
     private static readonly JsonSerializerSettings SerializerSettings =
@@ -72,6 +70,8 @@ internal sealed class EncounterPersistence :
                 if (failureReason != null) {
                     Main.LogError(
                         $"Encounter save state export failed: {failureReason}");
+                    RemoveSaveKey(list);
+                    return;
                 }
                 RemoveSaveKey(list);
                 Main.LogInfo(
@@ -171,52 +171,65 @@ internal sealed class EncounterPersistence :
             $"Encounter loaded record found and parsed: Lifecycle={record.Lifecycle} " +
             $"MechanicId={record.MechanicId ?? "None"}");
 
-        if (!TryResolveRecord(
-                record,
-                out List<BaseUnitEntity> initialEnemies,
-                out BaseUnitEntity leader,
-                out List<BaseUnitEntity> pendingEnemyJoins,
-                out failureReason)) {
-            SuppressInvalidLoadedState(failureReason);
-            return;
-        }
-
-        EncounterRuntime.RestoreSaveRecord(
-            record,
-            initialEnemies,
-            leader,
-            pendingEnemyJoins);
-
         switch (record.Lifecycle) {
             case EncounterSaveLifecycle.PendingActivation:
+                if (!TryResolvePendingActivation(
+                        record.PendingActivation,
+                        out List<BaseUnitEntity> initialEnemies,
+                        out BaseUnitEntity leader,
+                        out List<BaseUnitEntity> pendingEnemyJoins,
+                        out failureReason)) {
+                    SuppressInvalidLoadedState(failureReason);
+                    return;
+                }
+                EncounterRuntime.RestorePendingActivation(
+                    record,
+                    initialEnemies,
+                    leader,
+                    pendingEnemyJoins);
                 Main.LogInfo(
                     "Pending encounter activation restored; normal first-round selection remains pending.");
                 break;
             case EncounterSaveLifecycle.Active:
-                if (EncounterMechanicController
-                    .IsExecutionListMechanicId(
-                        record.MechanicId)) {
-                    Main.LogInfo(
-                        "Active Execution List save record found; attempting exact ordered restoration.");
-                    if (!EncounterRuntime.TryRestoreExecutionList(
-                            record.ExecutionListRecipe,
-                            out bool disabledInSettings,
-                            out string restoreFailureReason)) {
-                        if (disabledInSettings) {
-                            Main.LogWarning(
-                                $"Saved Execution List was suppressed because it is disabled in the current mod settings: {restoreFailureReason}");
-                        } else {
-                            Main.LogWarning(
-                                $"Saved Execution List was suppressed because its recipe is missing or invalid: {restoreFailureReason}");
-                        }
-                    }
-                } else {
-                    Main.LogWarning(
-                        $"Saved active mechanic was suppressed: MechanicId={record.MechanicId}. " +
-                        "Mechanic-specific restoration is not implemented in this roadmap point.");
+                if (!EncounterRuntime
+                    .TryGetLoadedProvisionalSession(
+                        out EncounterSession session,
+                        out failureReason) ||
+                    !EncounterRestoreContext.TryCreate(
+                        session,
+                        out EncounterRestoreContext context,
+                        out failureReason)) {
+                    SuppressInvalidLoadedState(failureReason);
+                    return;
+                }
+
+                EncounterMechanicRestoreStatus status =
+                    EncounterRuntime.RestoreActiveMechanic(
+                        record,
+                        context,
+                        out string restoreFailureReason);
+                switch (status) {
+                    case EncounterMechanicRestoreStatus.Restored:
+                        Main.LogInfo(
+                            $"Saved active mechanic restored: MechanicId={record.MechanicId}");
+                        break;
+                    case EncounterMechanicRestoreStatus.Unsupported:
+                        Main.LogWarning(
+                            $"Saved active mechanic was unsupported and suppressed: MechanicId={record.MechanicId}. {restoreFailureReason}");
+                        break;
+                    case EncounterMechanicRestoreStatus.DisabledInSettings:
+                        Main.LogWarning(
+                            $"Saved active mechanic was disabled in settings and suppressed: MechanicId={record.MechanicId}. {restoreFailureReason}");
+                        break;
+                    default:
+                        Main.LogWarning(
+                            $"Saved active mechanic was invalid and suppressed: MechanicId={record.MechanicId}. {restoreFailureReason}");
+                        break;
                 }
                 break;
             default:
+                EncounterRuntime.RestoreNonActiveLifecycle(
+                    record.Lifecycle);
                 Main.LogInfo(
                     $"Non-active encounter lifecycle restored: Lifecycle={record.Lifecycle}");
                 break;
@@ -246,49 +259,79 @@ internal sealed class EncounterPersistence :
                 $"invalid encounter type {(int)record.EncounterType}";
             return false;
         }
-        if (record.Lifecycle == EncounterSaveLifecycle.Active) {
-            if (!IsValidId(record.MechanicId)) {
-                failureReason =
-                    "an active record has no valid mechanic ID";
-                return false;
-            }
-        } else if (!string.IsNullOrEmpty(record.MechanicId)) {
+        switch (record.Lifecycle) {
+            case EncounterSaveLifecycle.PendingActivation:
+                if (record.MechanicId != null ||
+                    record.PendingActivation == null ||
+                    record.MechanicData != null) {
+                    failureReason =
+                        "the pending-activation record has an invalid lifecycle-specific shape";
+                    return false;
+                }
+                if (!TryValidatePendingActivation(
+                        record.PendingActivation,
+                        out failureReason)) {
+                    return false;
+                }
+                break;
+            case EncounterSaveLifecycle.Active:
+                if (!IsValidMechanicId(record.MechanicId) ||
+                    record.PendingActivation != null ||
+                    record.MechanicData == null) {
+                    failureReason =
+                        "the active record has an invalid lifecycle-specific shape";
+                    return false;
+                }
+                break;
+            case EncounterSaveLifecycle.NoCompatibleCandidate:
+            case EncounterSaveLifecycle.DisabledForCombat:
+            case EncounterSaveLifecycle.RuntimeFaulted:
+                if (record.MechanicId != null ||
+                    record.PendingActivation != null ||
+                    record.MechanicData != null) {
+                    failureReason =
+                        "the non-active record has an invalid lifecycle-specific shape";
+                    return false;
+                }
+                break;
+        }
+
+        failureReason = null;
+        return true;
+    }
+
+    private static bool TryValidatePendingActivation(
+        PendingActivationSaveData pending,
+        out string failureReason) {
+        if (pending.InitialEnemyIds == null ||
+            pending.InitialEnemyIds.Count == 0 ||
+            pending.InitialEnemyIds.Count >
+                EncounterPersistenceValidation.MaximumEntityCount) {
             failureReason =
-                "a non-active record unexpectedly contains a mechanic ID";
+                "the initial-enemy ID list has an invalid size";
             return false;
         }
-        if (record.ExecutionListRecipe != null &&
-            (record.Lifecycle != EncounterSaveLifecycle.Active ||
-             !EncounterMechanicController
-                 .IsExecutionListMechanicId(
-                     record.MechanicId))) {
+        if (pending.PendingEnemyJoinIds == null ||
+            pending.PendingEnemyJoinIds.Count >
+                EncounterPersistenceValidation.MaximumEntityCount) {
             failureReason =
-                "an Execution List recipe is attached to a different encounter state";
+                "the pending-enemy ID list has an invalid size";
             return false;
         }
-        if (record.LeaderId != null &&
-            !IsValidId(record.LeaderId)) {
+        if (pending.LeaderId != null &&
+            !EncounterPersistenceValidation
+                .IsValidEntityId(pending.LeaderId)) {
             failureReason = "the leader ID is invalid";
-            return false;
-        }
-        if (record.InitialEnemyIds == null ||
-            record.InitialEnemyIds.Count == 0 ||
-            record.InitialEnemyIds.Count > MaximumEntityCount) {
-            failureReason = "the initial-enemy ID list has an invalid size";
-            return false;
-        }
-        if (record.PendingEnemyJoinIds == null ||
-            record.PendingEnemyJoinIds.Count > MaximumEntityCount) {
-            failureReason = "the pending-enemy ID list has an invalid size";
             return false;
         }
 
         var ids = new HashSet<string>(StringComparer.Ordinal);
         for (int index = 0;
-             index < record.InitialEnemyIds.Count;
+             index < pending.InitialEnemyIds.Count;
              index++) {
-            string id = record.InitialEnemyIds[index];
-            if (!IsValidId(id)) {
+            string id = pending.InitialEnemyIds[index];
+            if (!EncounterPersistenceValidation
+                    .IsValidEntityId(id)) {
                 failureReason =
                     $"initial-enemy ID at index {index} is invalid";
                 return false;
@@ -299,17 +342,18 @@ internal sealed class EncounterPersistence :
                 return false;
             }
         }
-        if (record.LeaderId != null &&
-            !ids.Contains(record.LeaderId)) {
+        if (pending.LeaderId != null &&
+            !ids.Contains(pending.LeaderId)) {
             failureReason =
                 "the leader ID is not part of the initial enemy snapshot";
             return false;
         }
         for (int index = 0;
-             index < record.PendingEnemyJoinIds.Count;
+             index < pending.PendingEnemyJoinIds.Count;
              index++) {
-            string id = record.PendingEnemyJoinIds[index];
-            if (!IsValidId(id)) {
+            string id = pending.PendingEnemyJoinIds[index];
+            if (!EncounterPersistenceValidation
+                    .IsValidEntityId(id)) {
                 failureReason =
                     $"pending-enemy ID at index {index} is invalid";
                 return false;
@@ -325,17 +369,17 @@ internal sealed class EncounterPersistence :
         return true;
     }
 
-    private static bool TryResolveRecord(
-        EncounterSaveRecord record,
+    private static bool TryResolvePendingActivation(
+        PendingActivationSaveData pending,
         out List<BaseUnitEntity> initialEnemies,
         out BaseUnitEntity leader,
         out List<BaseUnitEntity> pendingEnemyJoins,
         out string failureReason) {
         initialEnemies = new List<BaseUnitEntity>(
-            record.InitialEnemyIds.Count);
+            pending.InitialEnemyIds.Count);
         leader = null;
         pendingEnemyJoins = new List<BaseUnitEntity>(
-            record.PendingEnemyJoinIds.Count);
+            pending.PendingEnemyJoinIds.Count);
 
         EntityService entityService = EntityService.Instance;
         if (entityService == null) {
@@ -344,37 +388,34 @@ internal sealed class EncounterPersistence :
         }
 
         for (int index = 0;
-             index < record.InitialEnemyIds.Count;
+             index < pending.InitialEnemyIds.Count;
              index++) {
-            string id = record.InitialEnemyIds[index];
+            string id = pending.InitialEnemyIds[index];
             BaseUnitEntity unit =
                 entityService.GetEntity<BaseUnitEntity>(id);
-            if (!IsValidInitialEnemy(
-                    unit,
-                    id,
-                    record.Lifecycle)) {
+            if (!IsValidPendingEnemy(unit, id)) {
                 failureReason =
                     $"initial enemy at index {index} could not be resolved as a valid loaded combat entity: Id={id}";
                 return false;
             }
             initialEnemies.Add(unit);
             if (string.Equals(
-                    record.LeaderId,
+                    pending.LeaderId,
                     id,
                     StringComparison.Ordinal)) {
                 leader = unit;
             }
         }
-        if (record.LeaderId != null && leader == null) {
+        if (pending.LeaderId != null && leader == null) {
             failureReason =
-                $"leader could not be resolved from the initial snapshot: Id={record.LeaderId}";
+                $"leader could not be resolved from the initial snapshot: Id={pending.LeaderId}";
             return false;
         }
 
         for (int index = 0;
-             index < record.PendingEnemyJoinIds.Count;
+             index < pending.PendingEnemyJoinIds.Count;
              index++) {
-            string id = record.PendingEnemyJoinIds[index];
+            string id = pending.PendingEnemyJoinIds[index];
             BaseUnitEntity unit =
                 entityService.GetEntity<BaseUnitEntity>(id);
             if (!IsValidPendingEnemy(unit, id)) {
@@ -389,30 +430,14 @@ internal sealed class EncounterPersistence :
         return true;
     }
 
-    private static bool IsValidInitialEnemy(
-        BaseUnitEntity unit,
-        string expectedId,
-        EncounterSaveLifecycle lifecycle) {
-        if (!IsValidTerrestrialEnemy(unit, expectedId)) {
-            return false;
-        }
-
-        if (lifecycle != EncounterSaveLifecycle.PendingActivation) {
-            return true;
-        }
-
-        return unit.IsInCombat &&
-               unit.LifeState != null &&
-               !unit.LifeState.IsDead;
-    }
-
     private static bool IsValidPendingEnemy(
         BaseUnitEntity unit,
         string expectedId) {
         return IsValidTerrestrialEnemy(unit, expectedId) &&
                unit.IsInCombat &&
                unit.LifeState != null &&
-               !unit.LifeState.IsDead;
+               !unit.LifeState.IsDead &&
+               !unit.LifeState.IsFinallyDead;
     }
 
     private static bool IsValidTerrestrialEnemy(
@@ -457,9 +482,11 @@ internal sealed class EncounterPersistence :
                    (EncounterType.Common | EncounterType.Boss);
     }
 
-    private static bool IsValidId(string id) {
+    private static bool IsValidMechanicId(string id) {
         return !string.IsNullOrWhiteSpace(id) &&
-               id.Length <= MaximumEntityIdLength;
+               id.Length <=
+                   EncounterPersistenceValidation
+                       .MaximumEntityIdLength;
     }
 
     private static void SuppressInvalidLoadedState(

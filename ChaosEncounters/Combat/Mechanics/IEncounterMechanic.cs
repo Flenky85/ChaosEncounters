@@ -1,4 +1,5 @@
 using Kingmaker.EntitySystem.Entities;
+using ChaosEncounters.Combat.Persistence;
 
 namespace ChaosEncounters.Combat.Mechanics;
 
@@ -31,6 +32,24 @@ internal interface IEncounterMechanic {
 
 internal interface IEnemyJoinAwareMechanic {
     void HandleEnemyJoined(BaseUnitEntity unit);
+}
+
+internal interface IPersistableEncounterMechanic {
+    bool TryCaptureSaveData(
+        EncounterMechanicSaveData saveData,
+        out string failureReason);
+
+    bool TryRestoreFromSave(
+        EncounterRestoreContext context,
+        EncounterMechanicSaveData saveData,
+        out string failureReason);
+}
+
+internal enum EncounterMechanicRestoreStatus {
+    Restored,
+    Unsupported,
+    DisabledInSettings,
+    Invalid
 }
 
 internal enum EncounterMechanicEndReason {
