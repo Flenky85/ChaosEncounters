@@ -102,47 +102,24 @@ internal sealed class EliteGuardMechanic :
                 "The Elite Guard requires its exact Boss and at least two living initial subordinates.");
         }
 
-        int firstOrdinal;
-        int secondOrdinal;
-        if (eligibleGuardCount == 2) {
-            firstOrdinal = 0;
-            secondOrdinal = 1;
-        } else {
-            System.Random random = GuardSelectionRandom;
-            if (random == null) {
-                random = new System.Random();
-                GuardSelectionRandom = random;
-            }
-
-            firstOrdinal = random.Next(eligibleGuardCount);
-            secondOrdinal = random.Next(eligibleGuardCount - 1);
-            if (secondOrdinal >= firstOrdinal) {
-                secondOrdinal++;
-            }
+        System.Random random = GuardSelectionRandom;
+        if (random == null) {
+            random = new System.Random();
+            GuardSelectionRandom = random;
         }
 
-        BaseUnitEntity guardOne = null;
-        BaseUnitEntity guardTwo = null;
-        int eligibleOrdinal = 0;
-        for (int index = 0;
-             index < session.InitialEnemies.Count;
-             index++) {
-            BaseUnitEntity candidate =
-                session.InitialEnemies[index];
-            if (ReferenceEquals(candidate, leader) ||
-                candidate == null ||
-                candidate.LifeState.IsDead) {
-                continue;
-            }
-
-            if (eligibleOrdinal == firstOrdinal) {
-                guardOne = candidate;
-            }
-            if (eligibleOrdinal == secondOrdinal) {
-                guardTwo = candidate;
-            }
-            eligibleOrdinal++;
-        }
+        BaseUnitEntity guardOne = SelectHighestRankGuard(
+            session,
+            leader,
+            excludedGuard: null,
+            random,
+            out int guardOneRank);
+        BaseUnitEntity guardTwo = SelectHighestRankGuard(
+            session,
+            leader,
+            guardOne,
+            random,
+            out int guardTwoRank);
         if (guardOne == null ||
             guardTwo == null ||
             ReferenceEquals(guardOne, guardTwo) ||
@@ -212,7 +189,9 @@ internal sealed class EliteGuardMechanic :
             $"The Elite Guard activated: " +
             $"BossName={Boss.CharacterName} " +
             $"GuardOneName={GuardOne.CharacterName} " +
+            $"GuardOneRank={GuardOne.Blueprint.DifficultyType} ({guardOneRank}) " +
             $"GuardTwoName={GuardTwo.CharacterName} " +
+            $"GuardTwoRank={GuardTwo.Blueprint.DifficultyType} ({guardTwoRank}) " +
             $"IncomingReduction={InitialIncomingReduction} " +
             $"GuardOutgoingIncrease={GuardOutgoingIncrease}");
     }
@@ -613,5 +592,49 @@ internal sealed class EliteGuardMechanic :
                    guardOneId,
                    guardTwoId,
                    StringComparison.Ordinal);
+    }
+
+    private static BaseUnitEntity SelectHighestRankGuard(
+        EncounterSession session,
+        BaseUnitEntity boss,
+        BaseUnitEntity excludedGuard,
+        System.Random random,
+        out int selectedRank) {
+        BaseUnitEntity selected = null;
+        selectedRank = -1;
+        int equalRankCandidateCount = 0;
+        for (int index = 0;
+             index < session.InitialEnemies.Count;
+             index++) {
+            BaseUnitEntity candidate =
+                session.InitialEnemies[index];
+            if (ReferenceEquals(candidate, boss) ||
+                ReferenceEquals(candidate, excludedGuard) ||
+                candidate == null ||
+                candidate.LifeState.IsDead) {
+                continue;
+            }
+            if (candidate.Blueprint == null ||
+                !EncounterClassifier.TryGetRankValue(
+                    candidate.Blueprint.DifficultyType,
+                    out int candidateRank)) {
+                throw new InvalidOperationException(
+                    "The Elite Guard found an eligible Guard with an unavailable or unsupported rank.");
+            }
+
+            if (candidateRank > selectedRank) {
+                selected = candidate;
+                selectedRank = candidateRank;
+                equalRankCandidateCount = 1;
+            } else if (candidateRank == selectedRank) {
+                equalRankCandidateCount++;
+                if (random.Next(
+                        equalRankCandidateCount) == 0) {
+                    selected = candidate;
+                }
+            }
+        }
+
+        return selected;
     }
 }

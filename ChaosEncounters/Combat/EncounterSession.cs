@@ -100,7 +100,7 @@ internal static class EncounterClassifier {
         }
     }
 
-    private static bool TryGetRankValue(UnitDifficultyType rank, out int value) {
+    internal static bool TryGetRankValue(UnitDifficultyType rank, out int value) {
         switch (rank) {
             case UnitDifficultyType.Swarm:
                 value = 0;
