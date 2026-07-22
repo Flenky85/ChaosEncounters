@@ -378,7 +378,6 @@ internal sealed class EncounterRuntime :
                 if (!EncounterMechanicController
                     .TryCaptureActiveMechanicData(
                         mechanicData,
-                        out _,
                         out failureReason)) {
                     record = null;
                     return false;
@@ -442,10 +441,9 @@ internal sealed class EncounterRuntime :
         out EncounterSession session,
         out string failureReason) {
         session = CurrentSession;
-        if (!IsValidLoadedSession(session)) {
-            session = null;
+        if (session == null) {
             failureReason =
-                "The loaded provisional encounter session is unavailable or invalid.";
+                "The loaded provisional encounter session is unavailable.";
             return false;
         }
 
@@ -461,9 +459,9 @@ internal sealed class EncounterRuntime :
         out string failureReason) {
         if (record == null ||
             record.Lifecycle != EncounterSaveLifecycle.Active ||
+            session == null ||
             context == null ||
-            !ReferenceEquals(CurrentSession, session) ||
-            !IsValidLoadedSession(session)) {
+            !ReferenceEquals(CurrentSession, session)) {
             failureReason =
                 "The active record does not match the loaded provisional encounter session.";
             SuppressLoadedCombat();

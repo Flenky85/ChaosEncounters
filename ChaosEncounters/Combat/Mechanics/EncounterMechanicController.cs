@@ -282,9 +282,7 @@ internal static class EncounterMechanicController {
 
     internal static bool TryCaptureActiveMechanicData(
         EncounterMechanicSaveData saveData,
-        out bool persistenceSupported,
         out string failureReason) {
-        persistenceSupported = false;
         failureReason = null;
         if (saveData == null) {
             failureReason =
@@ -310,7 +308,6 @@ internal static class EncounterMechanicController {
             return true;
         }
 
-        persistenceSupported = true;
         try {
             if (persistable.TryCaptureSaveData(
                     saveData,
