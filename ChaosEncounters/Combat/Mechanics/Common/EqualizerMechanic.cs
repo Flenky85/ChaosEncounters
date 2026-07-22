@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using ChaosEncounters.Combat.Persistence;
 using ChaosEncounters.UI;
 using HarmonyLib;
 using Kingmaker;
@@ -16,7 +17,8 @@ namespace ChaosEncounters.Combat.Mechanics.Common;
 
 internal sealed class EqualizerMechanic :
     IEncounterMechanic,
-    IEnemyJoinAwareMechanic {
+    IEnemyJoinAwareMechanic,
+    IPersistableEncounterMechanic {
     private const string MechanicId = "Equalizer";
     private const string HudTitle = "The Equalizer";
     private const string HudDescription =
@@ -284,6 +286,151 @@ internal sealed class EqualizerMechanic :
             CollapseDepth = 0;
             DeactivationDepth--;
         }
+    }
+
+    bool IPersistableEncounterMechanic.TryCaptureSaveData(
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (saveData == null) {
+            failureReason =
+                "The Equalizer save-data container is unavailable.";
+            return false;
+        }
+        if (!IsOperational ||
+            Members.Count == 0 ||
+            MaximumPool <= 0 ||
+            CurrentPool <= 0 ||
+            CurrentPool > MaximumPool) {
+            failureReason =
+                "The Equalizer is not in a valid operational state for save capture.";
+            return false;
+        }
+
+        return true;
+    }
+
+    bool IPersistableEncounterMechanic.TryRestoreFromSave(
+        EncounterRestoreContext context,
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (Members != null ||
+            ReferenceEquals(ActiveInstance, this)) {
+            failureReason =
+                "The Equalizer is already active.";
+            return false;
+        }
+        if (context == null) {
+            failureReason =
+                "The Equalizer restore context is unavailable.";
+            return false;
+        }
+        if (saveData == null) {
+            failureReason =
+                "The Equalizer save-data container is unavailable.";
+            return false;
+        }
+
+        var members = new List<MemberState>(
+            context.LivingEnemies.Count);
+        long maximumPool = 0;
+        long currentPool = 0;
+        for (int index = 0;
+             index < context.LivingEnemies.Count;
+             index++) {
+            BaseUnitEntity unit =
+                context.LivingEnemies[index];
+            if (!TryGetEligibleHealth(
+                    unit,
+                    out PartHealth health,
+                    out string memberFailureReason)) {
+                failureReason =
+                    $"The Equalizer cannot restore loaded enemy at index {index}: " +
+                    $"Reason={memberFailureReason}";
+                return false;
+            }
+
+            int maximumHitPoints = health.MaxHitPoints;
+            int currentHitPoints = health.HitPointsLeft;
+            if (currentHitPoints < 1 ||
+                currentHitPoints > maximumHitPoints) {
+                failureReason =
+                    $"The Equalizer loaded enemy at index {index} has invalid hit points: " +
+                    $"Current={currentHitPoints}, Maximum={maximumHitPoints}.";
+                return false;
+            }
+
+            try {
+                // Loaded native HP are authoritative. The logical pool is omitted for
+                // loaded-health/roster compatibility, so floor-clamped members restore at 1 HP.
+                maximumPool = checked(
+                    maximumPool + maximumHitPoints);
+                currentPool = checked(
+                    currentPool + currentHitPoints);
+            } catch (OverflowException) {
+                failureReason =
+                    "The Equalizer loaded health pools exceed safe integer arithmetic.";
+                return false;
+            }
+            if (maximumPool > MaximumSafePool) {
+                failureReason =
+                    "The Equalizer loaded maximum pool is too large for safe percentage arithmetic.";
+                return false;
+            }
+
+            members.Add(
+                new MemberState(
+                    this,
+                    unit,
+                    health,
+                    maximumHitPoints,
+                    index));
+        }
+
+        if (members.Count == 0 ||
+            maximumPool <= 0 ||
+            currentPool <= 0 ||
+            currentPool > maximumPool) {
+            failureReason =
+                "The Equalizer loaded roster does not provide valid positive health pools.";
+            return false;
+        }
+
+        EnsureHooksInstalled();
+
+        Members = members;
+        PendingReinforcements = null;
+        MaximumPool = maximumPool;
+        CurrentPool = currentPool;
+        NextRegistrationOrdinal = members.Count;
+        DisplayedPercent = -1;
+        AppliedModifierStepCount = -1;
+        ExternalMutationDepth = 0;
+        InternalSynchronizationDepth = 0;
+        CollapseDepth = 0;
+        DeactivationDepth = 0;
+        Faulted = false;
+        FailureLogged = false;
+        ExternalRemovalWarningLogged = false;
+        EnsureWorkBufferCapacity(members.Count);
+
+        for (int index = 0;
+             index < members.Count;
+             index++) {
+            members[index].SubscribeToMaximumHitPoints();
+        }
+
+        ActiveInstance = this;
+        VerifyInvariant();
+        UpdatePresentation(rosterChanged: true);
+        EncounterHud.Show(
+            HudTitle,
+            HudDescription);
+        Main.LogInfo(
+            $"The Equalizer restored: MemberCount={members.Count} " +
+            $"MaximumPool={MaximumPool} CurrentPool={CurrentPool}");
+        return true;
     }
 
     private bool IsOperational =>
