@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using ChaosEncounters.Combat.Persistence;
 using ChaosEncounters.UI;
 using Kingmaker.EntitySystem.Entities;
 
@@ -6,7 +7,8 @@ namespace ChaosEncounters.Combat.Mechanics.Boss;
 
 internal sealed class TyrantsAegisMechanic :
     IEncounterMechanic,
-    IEnemyJoinAwareMechanic {
+    IEnemyJoinAwareMechanic,
+    IPersistableEncounterMechanic {
     private const string MechanicId = "TyrantsAegis";
     private const string HudTitle = "Tyrant's Aegis";
     private const string HudDescription =
@@ -14,7 +16,7 @@ internal sealed class TyrantsAegisMechanic :
     private const string BossMarker = "Boss";
     private const string InvulnerableMarker = "Invul";
 
-    private EncounterSession ActiveSession;
+    private bool Active;
     private BaseUnitEntity Boss;
     private List<BaseUnitEntity> ProtectedEnemies;
     private bool Resolved;
@@ -35,7 +37,7 @@ internal sealed class TyrantsAegisMechanic :
             throw new InvalidOperationException(
                 "Tyrant's Aegis requires an encounter session.");
         }
-        if (ActiveSession != null) {
+        if (Active) {
             throw new InvalidOperationException(
                 "Tyrant's Aegis is already active.");
         }
@@ -67,10 +69,10 @@ internal sealed class TyrantsAegisMechanic :
                 "The Tyrant's Aegis Boss leader is not part of the initial enemy snapshot.");
         }
 
-        ActiveSession = session;
         Boss = leader;
         ProtectedEnemies = new List<BaseUnitEntity>();
         Resolved = false;
+        Active = true;
 
         for (int index = 0;
              index < session.InitialEnemies.Count;
@@ -127,7 +129,7 @@ internal sealed class TyrantsAegisMechanic :
 
     public void HandleEnemyJoined(
         BaseUnitEntity unit) {
-        if (ActiveSession == null ||
+        if (!Active ||
             Resolved ||
             ProtectedEnemies == null ||
             !IsLivingBoss(Boss) ||
@@ -153,7 +155,7 @@ internal sealed class TyrantsAegisMechanic :
     public void HandleEnemyDeath(
         BaseUnitEntity unit,
         int combatRound) {
-        if (ActiveSession == null ||
+        if (!Active ||
             Resolved ||
             unit == null) {
             return;
@@ -198,10 +200,206 @@ internal sealed class TyrantsAegisMechanic :
     public void Deactivate(
         EncounterMechanicEndReason reason) {
         ProtectedEnemies?.Clear();
-        ActiveSession = null;
+        Active = false;
         Boss = null;
         ProtectedEnemies = null;
         Resolved = false;
+    }
+
+    bool IPersistableEncounterMechanic.TryCaptureSaveData(
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (saveData == null) {
+            failureReason =
+                "The Tyrant's Aegis save-data container is unavailable.";
+            return false;
+        }
+        if (saveData.TyrantsAegis != null) {
+            failureReason =
+                "The Tyrant's Aegis save-data container is already populated.";
+            return false;
+        }
+        if (!Active || Boss == null || ProtectedEnemies == null) {
+            failureReason =
+                "Tyrant's Aegis is not initialized for save capture.";
+            return false;
+        }
+
+        string bossId = Boss.UniqueId;
+        if (!EncounterPersistenceValidation
+                .IsValidEntityId(bossId)) {
+            failureReason =
+                "The Tyrant's Aegis Boss has an invalid persistent ID.";
+            return false;
+        }
+
+        if (Resolved) {
+            if (IsLivingBoss(Boss)) {
+                failureReason =
+                    "The resolved Tyrant's Aegis Boss is still alive.";
+                return false;
+            }
+            if (ProtectedEnemies.Count != 0) {
+                failureReason =
+                    "The resolved Tyrant's Aegis still owns protected enemies.";
+                return false;
+            }
+        } else {
+            if (!IsLivingBoss(Boss)) {
+                failureReason =
+                    "The unresolved Tyrant's Aegis Boss is not alive.";
+                return false;
+            }
+
+            for (int index = 0;
+                 index < ProtectedEnemies.Count;
+                 index++) {
+                BaseUnitEntity protectedEnemy =
+                    ProtectedEnemies[index];
+                if (!IsValidProtectedEnemy(
+                        protectedEnemy,
+                        Boss)) {
+                    failureReason =
+                        $"The Tyrant's Aegis protected enemy at index {index} is invalid.";
+                    return false;
+                }
+
+                for (int duplicateIndex = 0;
+                     duplicateIndex < index;
+                     duplicateIndex++) {
+                    if (ReferenceEquals(
+                            ProtectedEnemies[duplicateIndex],
+                            protectedEnemy)) {
+                        failureReason =
+                            $"The Tyrant's Aegis protected enemy at index {index} is duplicated.";
+                        return false;
+                    }
+                }
+            }
+        }
+
+        saveData.TyrantsAegis =
+            new TyrantsAegisSaveRecipe {
+                BossId = bossId
+            };
+        return true;
+    }
+
+    bool IPersistableEncounterMechanic.TryRestoreFromSave(
+        EncounterRestoreContext context,
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (Active || Boss != null || ProtectedEnemies != null) {
+            failureReason =
+                "Tyrant's Aegis is already active.";
+            return false;
+        }
+        if (context == null) {
+            failureReason =
+                "The Tyrant's Aegis restore context is unavailable.";
+            return false;
+        }
+        if (saveData == null) {
+            failureReason =
+                "The Tyrant's Aegis save-data container is unavailable.";
+            return false;
+        }
+
+        TyrantsAegisSaveRecipe recipe =
+            saveData.TyrantsAegis;
+        if (recipe == null) {
+            failureReason =
+                "The Tyrant's Aegis save recipe is missing.";
+            return false;
+        }
+        if (!EncounterPersistenceValidation
+                .IsValidEntityId(recipe.BossId)) {
+            failureReason =
+                "The Tyrant's Aegis saved Boss ID is invalid.";
+            return false;
+        }
+        if (!context.TryResolveEnemy(
+                recipe.BossId,
+                requireLiving: false,
+                out BaseUnitEntity boss)) {
+            failureReason =
+                "The Tyrant's Aegis saved Boss could not be resolved as a loaded combat enemy.";
+            return false;
+        }
+
+        bool resolved = !IsLivingBoss(boss);
+        var protectedEnemies = resolved
+            ? new List<BaseUnitEntity>()
+            : new List<BaseUnitEntity>(
+                context.LivingEnemies.Count);
+        if (!resolved) {
+            bool bossFound = false;
+            for (int index = 0;
+                 index < context.LivingEnemies.Count;
+                 index++) {
+                BaseUnitEntity candidate =
+                    context.LivingEnemies[index];
+                if (ReferenceEquals(candidate, boss)) {
+                    bossFound = true;
+                    continue;
+                }
+                if (!IsValidProtectedEnemy(
+                        candidate,
+                        boss) ||
+                    FindUnitIndex(
+                        protectedEnemies,
+                        candidate) >= 0) {
+                    continue;
+                }
+
+                protectedEnemies.Add(candidate);
+            }
+            if (!bossFound) {
+                failureReason =
+                    "The living Tyrant's Aegis Boss is absent from the loaded living-enemy roster.";
+                return false;
+            }
+        }
+
+        Boss = boss;
+        ProtectedEnemies = protectedEnemies;
+        Resolved = resolved;
+        Active = true;
+
+        if (!resolved) {
+            for (int index = 0;
+                 index < protectedEnemies.Count;
+                 index++) {
+                BaseUnitEntity protectedEnemy =
+                    protectedEnemies[index];
+                DamageControl.SetIncomingDamageReduction(
+                    protectedEnemy,
+                    100);
+                UnitMarker.SetMarker(
+                    protectedEnemy,
+                    InvulnerableMarker,
+                    ChaosColors.Grey);
+            }
+
+            UnitMarker.SetMarker(
+                boss,
+                BossMarker,
+                ChaosColors.Red);
+            EncounterHud.Show(
+                HudTitle,
+                HudDescription);
+        } else {
+            EncounterHud.Hide();
+        }
+
+        Main.LogInfo(
+            $"Tyrant's Aegis restored: " +
+            $"BossName={boss.CharacterName} " +
+            $"ProtectedEnemyCount={protectedEnemies.Count} " +
+            $"Resolved={resolved}");
+        return true;
     }
 
     private static bool IsLivingBoss(
@@ -238,6 +436,20 @@ internal sealed class TyrantsAegisMechanic :
             if (ReferenceEquals(
                     protectedEnemies[index],
                     unit)) {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static int FindUnitIndex(
+        List<BaseUnitEntity> units,
+        BaseUnitEntity unit) {
+        for (int index = 0;
+             index < units.Count;
+             index++) {
+            if (ReferenceEquals(units[index], unit)) {
                 return index;
             }
         }
