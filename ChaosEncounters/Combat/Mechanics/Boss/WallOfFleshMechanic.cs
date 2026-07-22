@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using ChaosEncounters.Combat.Persistence;
 using ChaosEncounters.UI;
 using Kingmaker.EntitySystem.Entities;
 
@@ -6,14 +7,15 @@ namespace ChaosEncounters.Combat.Mechanics.Boss;
 
 internal sealed class WallOfFleshMechanic :
     IEncounterMechanic,
-    IEnemyJoinAwareMechanic {
+    IEnemyJoinAwareMechanic,
+    IPersistableEncounterMechanic {
     private const string MechanicId = "WallOfFlesh";
     private const string HudTitle = "Wall of Flesh";
     private const string HudDescription =
         "The Boss uses its followers as a living shield and remains invulnerable until they are all dead.";
     private const string BossMarker = "Boss";
 
-    private EncounterSession ActiveSession;
+    private bool Active;
     private BaseUnitEntity Boss;
     private List<BaseUnitEntity> LivingMinions;
     private bool ProtectionActive;
@@ -34,7 +36,7 @@ internal sealed class WallOfFleshMechanic :
             throw new InvalidOperationException(
                 "Wall of Flesh requires an encounter session.");
         }
-        if (ActiveSession != null) {
+        if (Active) {
             throw new InvalidOperationException(
                 "Wall of Flesh is already active.");
         }
@@ -73,10 +75,10 @@ internal sealed class WallOfFleshMechanic :
                 "The Wall of Flesh Boss leader is not part of the initial enemy snapshot.");
         }
 
-        ActiveSession = session;
         Boss = leader;
         LivingMinions = livingMinions;
         ProtectionActive = LivingMinions.Count > 0;
+        Active = true;
 
         if (ProtectionActive) {
             DamageControl.SetIncomingDamageReduction(
@@ -122,7 +124,7 @@ internal sealed class WallOfFleshMechanic :
         List<BaseUnitEntity> livingMinions =
             LivingMinions;
         BaseUnitEntity boss = Boss;
-        if (ActiveSession == null ||
+        if (!Active ||
             livingMinions == null ||
             !IsLivingBoss(boss) ||
             !IsValidSubordinate(unit, boss) ||
@@ -156,7 +158,7 @@ internal sealed class WallOfFleshMechanic :
     public void HandleEnemyDeath(
         BaseUnitEntity unit,
         int combatRound) {
-        if (ActiveSession == null || unit == null) {
+        if (!Active || unit == null) {
             return;
         }
 
@@ -203,10 +205,213 @@ internal sealed class WallOfFleshMechanic :
     public void Deactivate(
         EncounterMechanicEndReason reason) {
         LivingMinions?.Clear();
-        ActiveSession = null;
+        Active = false;
         Boss = null;
         LivingMinions = null;
         ProtectionActive = false;
+    }
+
+    bool IPersistableEncounterMechanic.TryCaptureSaveData(
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (saveData == null) {
+            failureReason =
+                "The Wall of Flesh save-data container is unavailable.";
+            return false;
+        }
+        if (saveData.WallOfFlesh != null) {
+            failureReason =
+                "The Wall of Flesh save-data container is already populated.";
+            return false;
+        }
+        if (!Active || Boss == null) {
+            failureReason =
+                "Wall of Flesh is not initialized for save capture.";
+            return false;
+        }
+
+        string bossId = Boss.UniqueId;
+        if (!EncounterPersistenceValidation
+                .IsValidEntityId(bossId)) {
+            failureReason =
+                "The Wall of Flesh Boss has an invalid persistent ID.";
+            return false;
+        }
+
+        if (IsLivingBoss(Boss)) {
+            if (LivingMinions == null) {
+                failureReason =
+                    "The living Wall of Flesh Boss has no minion roster.";
+                return false;
+            }
+            if (ProtectionActive !=
+                (LivingMinions.Count > 0)) {
+                failureReason =
+                    "The Wall of Flesh protection state does not match its living-minion roster.";
+                return false;
+            }
+
+            for (int index = 0;
+                 index < LivingMinions.Count;
+                 index++) {
+                BaseUnitEntity minion =
+                    LivingMinions[index];
+                if (!IsValidSubordinate(
+                        minion,
+                        Boss)) {
+                    failureReason =
+                        $"The Wall of Flesh minion at index {index} is invalid.";
+                    return false;
+                }
+
+                for (int duplicateIndex = 0;
+                     duplicateIndex < index;
+                     duplicateIndex++) {
+                    if (ReferenceEquals(
+                            LivingMinions[duplicateIndex],
+                            minion)) {
+                        failureReason =
+                            $"The Wall of Flesh minion at index {index} is duplicated.";
+                        return false;
+                    }
+                }
+            }
+        } else {
+            if (ProtectionActive) {
+                failureReason =
+                    "The dead Wall of Flesh Boss still has active protection.";
+                return false;
+            }
+            if (LivingMinions != null) {
+                failureReason =
+                    "The dead Wall of Flesh Boss still owns a minion roster.";
+                return false;
+            }
+        }
+
+        saveData.WallOfFlesh =
+            new WallOfFleshSaveRecipe {
+                BossId = bossId
+            };
+        return true;
+    }
+
+    bool IPersistableEncounterMechanic.TryRestoreFromSave(
+        EncounterRestoreContext context,
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (Active ||
+            Boss != null ||
+            LivingMinions != null ||
+            ProtectionActive) {
+            failureReason =
+                "Wall of Flesh is already active or retains runtime state.";
+            return false;
+        }
+        if (context == null) {
+            failureReason =
+                "The Wall of Flesh restore context is unavailable.";
+            return false;
+        }
+        if (saveData == null) {
+            failureReason =
+                "The Wall of Flesh save-data container is unavailable.";
+            return false;
+        }
+
+        WallOfFleshSaveRecipe recipe =
+            saveData.WallOfFlesh;
+        if (recipe == null) {
+            failureReason =
+                "The Wall of Flesh save recipe is missing.";
+            return false;
+        }
+        if (!EncounterPersistenceValidation
+                .IsValidEntityId(recipe.BossId)) {
+            failureReason =
+                "The Wall of Flesh saved Boss ID is invalid.";
+            return false;
+        }
+        if (!context.TryResolveEnemy(
+                recipe.BossId,
+                requireLiving: false,
+                out BaseUnitEntity boss)) {
+            failureReason =
+                "The Wall of Flesh saved Boss could not be resolved as a loaded combat enemy.";
+            return false;
+        }
+
+        bool bossAlive = IsLivingBoss(boss);
+        List<BaseUnitEntity> livingMinions = null;
+        bool protectionActive = false;
+        if (bossAlive) {
+            livingMinions = new List<BaseUnitEntity>(
+                context.LivingEnemies.Count);
+            bool bossFound = false;
+            for (int index = 0;
+                 index < context.LivingEnemies.Count;
+                 index++) {
+                BaseUnitEntity candidate =
+                    context.LivingEnemies[index];
+                if (ReferenceEquals(candidate, boss)) {
+                    bossFound = true;
+                    continue;
+                }
+                if (!IsValidSubordinate(
+                        candidate,
+                        boss) ||
+                    FindUnitIndex(
+                        livingMinions,
+                        candidate) >= 0) {
+                    continue;
+                }
+
+                livingMinions.Add(candidate);
+            }
+            if (!bossFound) {
+                failureReason =
+                    "The living Wall of Flesh Boss is absent from the loaded living-enemy roster.";
+                return false;
+            }
+
+            protectionActive = livingMinions.Count > 0;
+        }
+
+        Boss = boss;
+        LivingMinions = livingMinions;
+        ProtectionActive = protectionActive;
+        Active = true;
+
+        if (bossAlive) {
+            if (protectionActive) {
+                DamageControl.SetIncomingDamageReduction(
+                    boss,
+                    100);
+            }
+            UnitMarker.SetMarker(
+                boss,
+                BossMarker,
+                ChaosColors.Grey);
+            if (protectionActive) {
+                EncounterHud.Show(
+                    HudTitle,
+                    HudDescription);
+            } else {
+                EncounterHud.Hide();
+            }
+        } else {
+            EncounterHud.Hide();
+        }
+
+        Main.LogInfo(
+            $"Wall of Flesh restored: " +
+            $"BossName={boss.CharacterName} " +
+            $"LivingMinions={livingMinions?.Count ?? 0} " +
+            $"ProtectionActive={protectionActive} " +
+            $"BossAlive={bossAlive}");
+        return true;
     }
 
     private static bool IsLivingBoss(

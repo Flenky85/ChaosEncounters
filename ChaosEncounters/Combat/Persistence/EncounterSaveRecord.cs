@@ -30,6 +30,7 @@ internal sealed class EncounterMechanicSaveData {
     public ExecutionListSaveRecipe ExecutionList { get; set; }
     public RisingVengeanceSaveRecipe RisingVengeance { get; set; }
     public TyrantsAegisSaveRecipe TyrantsAegis { get; set; }
+    public WallOfFleshSaveRecipe WallOfFlesh { get; set; }
 }
 
 internal sealed class ExecutionListSaveRecipe {
@@ -47,5 +48,9 @@ internal sealed class RisingVengeanceMarkedEnemySaveData {
 }
 
 internal sealed class TyrantsAegisSaveRecipe {
+    public string BossId { get; set; }
+}
+
+internal sealed class WallOfFleshSaveRecipe {
     public string BossId { get; set; }
 }
