@@ -303,15 +303,9 @@ internal sealed class ExecutionListMechanic :
                 "The Execution List is already active.";
             return false;
         }
-        if (context?.Session == null) {
+        if (context == null) {
             failureReason =
-                "The Execution List restore has no encounter session.";
-            return false;
-        }
-        if (!context.Session.SupportsEncounterType(
-                EncounterType.Common)) {
-            failureReason =
-                "The persisted encounter does not support The Execution List.";
+                "The Execution List restore context is unavailable.";
             return false;
         }
         ExecutionListSaveRecipe recipe =

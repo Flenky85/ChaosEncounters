@@ -7,30 +7,20 @@ namespace ChaosEncounters.Combat.Persistence;
 internal sealed class EncounterRestoreContext {
     private readonly EntityService EntityService;
 
-    internal EncounterSession Session { get; }
     internal IReadOnlyList<BaseUnitEntity> LivingEnemies { get; }
 
     private EncounterRestoreContext(
-        EncounterSession session,
         List<BaseUnitEntity> livingEnemies,
         EntityService entityService) {
-        Session = session;
         LivingEnemies = livingEnemies;
         EntityService = entityService;
     }
 
     internal static bool TryCreate(
-        EncounterSession session,
         out EncounterRestoreContext context,
         out string failureReason) {
         context = null;
         failureReason = null;
-        if (session == null) {
-            failureReason =
-                "The loaded encounter session is unavailable.";
-            return false;
-        }
-
         Game game = Game.Instance;
         if (game?.State?.AllBaseAwakeUnitsForSure == null) {
             failureReason =
@@ -58,7 +48,6 @@ internal sealed class EncounterRestoreContext {
         }
 
         context = new EncounterRestoreContext(
-            session,
             livingEnemies,
             entityService);
         return true;

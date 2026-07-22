@@ -358,8 +358,7 @@ internal sealed class EncounterRuntime :
         record = new EncounterSaveRecord {
             SchemaVersion =
                 EncounterSaveRecord.CurrentSchemaVersion,
-            Lifecycle = lifecycle,
-            EncounterType = session.Type
+            Lifecycle = lifecycle
         };
 
         switch (lifecycle) {
@@ -401,6 +400,7 @@ internal sealed class EncounterRuntime :
 
     internal static void RestorePendingActivation(
         EncounterSaveRecord record,
+        PendingActivationSaveData pending,
         List<BaseUnitEntity> initialEnemies,
         BaseUnitEntity leader,
         List<BaseUnitEntity> pendingEnemyJoins) {
@@ -410,6 +410,9 @@ internal sealed class EncounterRuntime :
             throw new ArgumentException(
                 "A pending-activation record is required.",
                 nameof(record));
+        }
+        if (pending == null) {
+            throw new ArgumentNullException(nameof(pending));
         }
         if (initialEnemies == null) {
             throw new ArgumentNullException(nameof(initialEnemies));
@@ -423,7 +426,7 @@ internal sealed class EncounterRuntime :
             EncounterMechanicEndReason.LoadedStateReplaced);
         CurrentSession = new EncounterSession(
             initialEnemies,
-            record.EncounterType,
+            pending.EncounterType,
             leader);
         PendingEnemyJoins = pendingEnemyJoins.Count == 0
             ? null
@@ -453,12 +456,14 @@ internal sealed class EncounterRuntime :
     internal static EncounterMechanicRestoreStatus
         RestoreActiveMechanic(
         EncounterSaveRecord record,
+        EncounterSession session,
         EncounterRestoreContext context,
         out string failureReason) {
         if (record == null ||
             record.Lifecycle != EncounterSaveLifecycle.Active ||
             context == null ||
-            !ReferenceEquals(CurrentSession, context.Session)) {
+            !ReferenceEquals(CurrentSession, session) ||
+            !IsValidLoadedSession(session)) {
             failureReason =
                 "The active record does not match the loaded provisional encounter session.";
             SuppressLoadedCombat();
@@ -469,6 +474,7 @@ internal sealed class EncounterRuntime :
             EncounterMechanicController
                 .TryRestoreActiveMechanic(
                     record.MechanicId,
+                    session,
                     context,
                     record.MechanicData,
                     out failureReason);
@@ -482,10 +488,6 @@ internal sealed class EncounterRuntime :
             ? EncounterSaveLifecycle.Active
             : EncounterSaveLifecycle.DisabledForCombat;
 
-        if (status != EncounterMechanicRestoreStatus.Restored) {
-            EncounterMechanicController.Deactivate(
-                EncounterMechanicEndReason.LoadedStateReplaced);
-        }
         return status;
     }
 
@@ -639,6 +641,7 @@ internal sealed class EncounterRuntime :
         }
 
         pending = new PendingActivationSaveData {
+            EncounterType = session.Type,
             LeaderId = leaderId,
             InitialEnemyIds = initialEnemyIds,
             PendingEnemyJoinIds = pendingEnemyJoinIds
@@ -653,7 +656,6 @@ internal sealed class EncounterRuntime :
             return false;
         }
 
-        bool leaderFound = session.Leader == null;
         for (int index = 0;
              index < session.InitialEnemies.Count;
              index++) {
@@ -669,12 +671,9 @@ internal sealed class EncounterRuntime :
                     .IsValidEntityId(unit.UniqueId)) {
                 return false;
             }
-            if (ReferenceEquals(unit, session.Leader)) {
-                leaderFound = true;
-            }
         }
 
-        return leaderFound;
+        return true;
     }
 
     private static void ForwardPendingEnemyJoins() {

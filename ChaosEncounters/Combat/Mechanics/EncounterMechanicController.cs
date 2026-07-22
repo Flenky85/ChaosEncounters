@@ -332,16 +332,26 @@ internal static class EncounterMechanicController {
     internal static EncounterMechanicRestoreStatus
         TryRestoreActiveMechanic(
         string mechanicId,
+        EncounterSession session,
         EncounterRestoreContext context,
         EncounterMechanicSaveData saveData,
         out string failureReason) {
         failureReason = null;
+        if (ActiveSession != null || ActiveMechanic != null) {
+            Deactivate(
+                EncounterMechanicEndReason.LoadedStateReplaced);
+            failureReason =
+                "Existing encounter mechanic ownership was cleared before active restoration.";
+            return EncounterMechanicRestoreStatus.Invalid;
+        }
         if (string.IsNullOrWhiteSpace(mechanicId)) {
             failureReason =
                 "The active mechanic ID is invalid.";
             return EncounterMechanicRestoreStatus.Invalid;
         }
-        if (context?.Session == null || saveData == null) {
+        if (session == null ||
+            context == null ||
+            saveData == null) {
             failureReason =
                 "The active mechanic restore context or save data is unavailable.";
             return EncounterMechanicRestoreStatus.Invalid;
@@ -367,13 +377,7 @@ internal static class EncounterMechanicController {
                 $"Mechanic {mechanic.Id} does not implement save restoration.";
             return EncounterMechanicRestoreStatus.Unsupported;
         }
-        if (ActiveSession != null || ActiveMechanic != null) {
-            failureReason =
-                "An encounter mechanic is already owned during active restoration.";
-            return EncounterMechanicRestoreStatus.Invalid;
-        }
-
-        ActiveSession = context.Session;
+        ActiveSession = session;
         ActiveMechanic = mechanic;
         try {
             if (persistable.TryRestoreFromSave(

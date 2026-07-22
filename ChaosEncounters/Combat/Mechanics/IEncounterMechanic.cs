@@ -39,6 +39,8 @@ internal interface IPersistableEncounterMechanic {
         EncounterMechanicSaveData saveData,
         out string failureReason);
 
+    // Restoration rebuilds an already selected mechanic and must not
+    // re-evaluate activation eligibility, classification, or CanActivate.
     bool TryRestoreFromSave(
         EncounterRestoreContext context,
         EncounterMechanicSaveData saveData,

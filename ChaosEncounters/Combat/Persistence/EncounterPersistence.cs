@@ -184,6 +184,7 @@ internal sealed class EncounterPersistence :
                 }
                 EncounterRuntime.RestorePendingActivation(
                     record,
+                    record.PendingActivation,
                     initialEnemies,
                     leader,
                     pendingEnemyJoins);
@@ -196,7 +197,6 @@ internal sealed class EncounterPersistence :
                         out EncounterSession session,
                         out failureReason) ||
                     !EncounterRestoreContext.TryCreate(
-                        session,
                         out EncounterRestoreContext context,
                         out failureReason)) {
                     SuppressInvalidLoadedState(failureReason);
@@ -206,6 +206,7 @@ internal sealed class EncounterPersistence :
                 EncounterMechanicRestoreStatus status =
                     EncounterRuntime.RestoreActiveMechanic(
                         record,
+                        session,
                         context,
                         out string restoreFailureReason);
                 switch (status) {
@@ -254,11 +255,6 @@ internal sealed class EncounterPersistence :
                 $"unsupported lifecycle value {(int)record.Lifecycle}";
             return false;
         }
-        if (!IsSupportedEncounterType(record.EncounterType)) {
-            failureReason =
-                $"invalid encounter type {(int)record.EncounterType}";
-            return false;
-        }
         switch (record.Lifecycle) {
             case EncounterSaveLifecycle.PendingActivation:
                 if (record.MechanicId != null ||
@@ -303,6 +299,12 @@ internal sealed class EncounterPersistence :
     private static bool TryValidatePendingActivation(
         PendingActivationSaveData pending,
         out string failureReason) {
+        if (!IsSupportedEncounterType(
+                pending.EncounterType)) {
+            failureReason =
+                $"invalid pending encounter type {(int)pending.EncounterType}";
+            return false;
+        }
         if (pending.InitialEnemyIds == null ||
             pending.InitialEnemyIds.Count == 0 ||
             pending.InitialEnemyIds.Count >
