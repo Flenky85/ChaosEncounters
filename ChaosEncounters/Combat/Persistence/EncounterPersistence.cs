@@ -1,4 +1,5 @@
 using HarmonyLib;
+using ChaosEncounters.Combat.Mechanics;
 using Kingmaker;
 using Kingmaker.EntitySystem;
 using Kingmaker.EntitySystem.Entities;
@@ -192,9 +193,28 @@ internal sealed class EncounterPersistence :
                     "Pending encounter activation restored; normal first-round selection remains pending.");
                 break;
             case EncounterSaveLifecycle.Active:
-                Main.LogWarning(
-                    $"Saved active mechanic was suppressed: MechanicId={record.MechanicId}. " +
-                    "Mechanic-specific restoration is not implemented in this roadmap point.");
+                if (EncounterMechanicController
+                    .IsExecutionListMechanicId(
+                        record.MechanicId)) {
+                    Main.LogInfo(
+                        "Active Execution List save record found; attempting exact ordered restoration.");
+                    if (!EncounterRuntime.TryRestoreExecutionList(
+                            record.ExecutionListRecipe,
+                            out bool disabledInSettings,
+                            out string restoreFailureReason)) {
+                        if (disabledInSettings) {
+                            Main.LogWarning(
+                                $"Saved Execution List was suppressed because it is disabled in the current mod settings: {restoreFailureReason}");
+                        } else {
+                            Main.LogWarning(
+                                $"Saved Execution List was suppressed because its recipe is missing or invalid: {restoreFailureReason}");
+                        }
+                    }
+                } else {
+                    Main.LogWarning(
+                        $"Saved active mechanic was suppressed: MechanicId={record.MechanicId}. " +
+                        "Mechanic-specific restoration is not implemented in this roadmap point.");
+                }
                 break;
             default:
                 Main.LogInfo(
@@ -235,6 +255,15 @@ internal sealed class EncounterPersistence :
         } else if (!string.IsNullOrEmpty(record.MechanicId)) {
             failureReason =
                 "a non-active record unexpectedly contains a mechanic ID";
+            return false;
+        }
+        if (record.ExecutionListRecipe != null &&
+            (record.Lifecycle != EncounterSaveLifecycle.Active ||
+             !EncounterMechanicController
+                 .IsExecutionListMechanicId(
+                     record.MechanicId))) {
+            failureReason =
+                "an Execution List recipe is attached to a different encounter state";
             return false;
         }
         if (record.LeaderId != null &&

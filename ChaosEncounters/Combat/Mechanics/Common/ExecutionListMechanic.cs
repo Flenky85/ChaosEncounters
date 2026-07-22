@@ -1,5 +1,8 @@
 using System.Collections.Generic;
+using ChaosEncounters.Combat.Persistence;
 using ChaosEncounters.UI;
+using Kingmaker;
+using Kingmaker.EntitySystem;
 using Kingmaker.EntitySystem.Entities;
 using UnityEngine;
 
@@ -8,7 +11,9 @@ namespace ChaosEncounters.Combat.Mechanics.Common;
 internal sealed class ExecutionListMechanic :
     IEncounterMechanic,
     IEnemyJoinAwareMechanic {
-    private const string MechanicId = "ExecutionList";
+    internal const string MechanicId = "ExecutionList";
+    private const int MaximumPersistedEnemyCount = 4096;
+    private const int MaximumEntityIdLength = 1024;
     private const string HudTitle = "The Execution List";
     private const string HudDescription =
         "Every enemy is assigned a position on the Execution List. Position 1 has 0% damage reduction, position 2 has 20%, position 3 has 40%, position 4 has 60%, position 5 has 80%, and positions 6 or higher are immune with 100% damage reduction. When an enemy dies, every enemy behind it moves up one position and its damage reduction is updated accordingly, bringing each survivor one step closer to execution.";
@@ -230,6 +235,227 @@ internal sealed class ExecutionListMechanic :
     public void Deactivate(
         EncounterMechanicEndReason reason) {
         OrderedEnemies = null;
+    }
+
+    internal bool TryCreateSaveRecipe(
+        out ExecutionListSaveRecipe recipe,
+        out string failureReason) {
+        recipe = null;
+        failureReason = null;
+        List<BaseUnitEntity> orderedEnemies = OrderedEnemies;
+        if (orderedEnemies == null) {
+            failureReason =
+                "The Execution List ordered enemy list is unavailable.";
+            return false;
+        }
+        if (orderedEnemies.Count > MaximumPersistedEnemyCount) {
+            failureReason =
+                $"The Execution List ordered enemy count exceeds {MaximumPersistedEnemyCount}.";
+            return false;
+        }
+
+        var orderedEnemyIds = new List<string>(
+            orderedEnemies.Count);
+        var uniqueIds = new HashSet<string>(
+            StringComparer.Ordinal);
+        for (int index = 0;
+             index < orderedEnemies.Count;
+             index++) {
+            string id = orderedEnemies[index]?.UniqueId;
+            if (!IsValidPersistedId(id)) {
+                failureReason =
+                    $"The Execution List enemy at index {index} has an invalid persistent ID.";
+                return false;
+            }
+            if (!uniqueIds.Add(id)) {
+                failureReason =
+                    $"The Execution List enemy at index {index} has a duplicate persistent ID.";
+                return false;
+            }
+            orderedEnemyIds.Add(id);
+        }
+
+        recipe = new ExecutionListSaveRecipe {
+            OrderedEnemyIds = orderedEnemyIds
+        };
+        Main.LogInfo(
+            $"The Execution List save recipe captured: " +
+            $"OrderedEnemyCount={orderedEnemyIds.Count}");
+        return true;
+    }
+
+    internal bool TryRestore(
+        EncounterSession session,
+        ExecutionListSaveRecipe recipe,
+        out string failureReason) {
+        failureReason = null;
+        if (OrderedEnemies != null) {
+            failureReason =
+                "The Execution List is already active.";
+            return false;
+        }
+        if (session == null) {
+            failureReason =
+                "The Execution List restore has no encounter session.";
+            return false;
+        }
+        if (!session.SupportsEncounterType(
+                EncounterType.Common)) {
+            failureReason =
+                "The persisted encounter does not support The Execution List.";
+            return false;
+        }
+        if (recipe == null) {
+            failureReason =
+                "The Execution List save recipe is missing.";
+            return false;
+        }
+        List<string> savedIds = recipe.OrderedEnemyIds;
+        if (savedIds == null) {
+            failureReason =
+                "The Execution List ordered enemy ID list is missing.";
+            return false;
+        }
+        if (savedIds.Count > MaximumPersistedEnemyCount) {
+            failureReason =
+                $"The Execution List ordered enemy ID count exceeds {MaximumPersistedEnemyCount}.";
+            return false;
+        }
+
+        var uniqueSavedIds = new HashSet<string>(
+            StringComparer.Ordinal);
+        for (int index = 0;
+             index < savedIds.Count;
+             index++) {
+            string id = savedIds[index];
+            if (!IsValidPersistedId(id)) {
+                failureReason =
+                    $"The Execution List saved ID at index {index} is invalid.";
+                return false;
+            }
+            if (!uniqueSavedIds.Add(id)) {
+                failureReason =
+                    $"The Execution List saved ID at index {index} is duplicated.";
+                return false;
+            }
+        }
+
+        EntityService entityService = EntityService.Instance;
+        if (entityService == null) {
+            failureReason =
+                "EntityService is unavailable during The Execution List restoration.";
+            return false;
+        }
+
+        var restoredEnemies = new List<BaseUnitEntity>(
+            savedIds.Count);
+        int resolvedSavedCount = 0;
+        for (int index = 0;
+             index < savedIds.Count;
+             index++) {
+            string savedId = savedIds[index];
+            BaseUnitEntity unit =
+                entityService.GetEntity<BaseUnitEntity>(
+                    savedId);
+            if (!IsValidLivingCombatEnemy(unit) ||
+                !string.Equals(
+                    unit.UniqueId,
+                    savedId,
+                    StringComparison.Ordinal)) {
+                continue;
+            }
+
+            restoredEnemies.Add(unit);
+            resolvedSavedCount++;
+        }
+
+        Game game = Game.Instance;
+        if (game?.State?.AllBaseAwakeUnitsForSure == null) {
+            failureReason =
+                "The loaded awake-unit collection is unavailable during The Execution List restoration.";
+            return false;
+        }
+
+        int currentLivingEnemyCount = 0;
+        int appendedCurrentEnemyCount = 0;
+        foreach (BaseUnitEntity candidate in
+            game.State.AllBaseAwakeUnitsForSure) {
+            if (!IsValidLivingCombatEnemy(candidate)) {
+                continue;
+            }
+
+            currentLivingEnemyCount++;
+            bool alreadyRestored = false;
+            for (int index = 0;
+                 index < restoredEnemies.Count;
+                 index++) {
+                if (ReferenceEquals(
+                        restoredEnemies[index],
+                        candidate)) {
+                    alreadyRestored = true;
+                    break;
+                }
+            }
+            if (alreadyRestored) {
+                continue;
+            }
+
+            restoredEnemies.Add(candidate);
+            appendedCurrentEnemyCount++;
+        }
+
+        if (resolvedSavedCount == 0 &&
+            currentLivingEnemyCount > 0) {
+            failureReason =
+                "No saved Execution List enemy could be reconstructed while the loaded combat still contains living enemies.";
+            return false;
+        }
+
+        OrderedEnemies = restoredEnemies;
+        for (int index = 0;
+             index < restoredEnemies.Count;
+             index++) {
+            ApplyPosition(
+                restoredEnemies[index],
+                index + 1);
+        }
+
+        if (restoredEnemies.Count > 0) {
+            EncounterHud.Show(
+                HudTitle,
+                HudDescription);
+        } else {
+            EncounterHud.Hide();
+        }
+
+        int skippedSavedCount =
+            savedIds.Count - resolvedSavedCount;
+        Main.LogInfo(
+            $"The Execution List restored: " +
+            $"SavedIdCount={savedIds.Count} " +
+            $"ResolvedSavedCount={resolvedSavedCount} " +
+            $"SkippedSavedCount={skippedSavedCount} " +
+            $"AppendedCurrentEnemyCount={appendedCurrentEnemyCount} " +
+            $"RestoredEnemyCount={restoredEnemies.Count}");
+        return true;
+    }
+
+    private static bool IsValidPersistedId(string id) {
+        return !string.IsNullOrWhiteSpace(id) &&
+               id.Length <= MaximumEntityIdLength;
+    }
+
+    private static bool IsValidLivingCombatEnemy(
+        BaseUnitEntity unit) {
+        return unit != null &&
+               unit is not StarshipEntity &&
+               !unit.IsDisposed &&
+               unit.IsInGame &&
+               unit.IsInCombat &&
+               unit.IsPlayerEnemy &&
+               unit.LifeState != null &&
+               !unit.LifeState.IsDead &&
+               !unit.LifeState.IsFinallyDead;
     }
 
     private static void ApplyPosition(

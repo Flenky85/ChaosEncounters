@@ -1,4 +1,5 @@
 using ChaosEncounters.Configuration;
+using ChaosEncounters.Combat.Persistence;
 using ChaosEncounters.UI;
 using ChaosEncounters.Combat.Mechanics.Boss;
 using ChaosEncounters.Combat.Mechanics.Common;
@@ -9,8 +10,11 @@ namespace ChaosEncounters.Combat.Mechanics;
 internal static class EncounterMechanicController {
     private static System.Random SelectionRandom;
 
+    private static readonly ExecutionListMechanic
+        ExecutionListMechanicInstance = new();
+
     private static readonly IEncounterMechanic[] CommonMechanics = {
-        new ExecutionListMechanic(),
+        ExecutionListMechanicInstance,
         new RisingVengeanceMechanic(),
         new EqualizerMechanic()
     };
@@ -29,6 +33,14 @@ internal static class EncounterMechanicController {
 
     internal static string ActiveMechanicId =>
         ActiveMechanic?.Id;
+
+    internal static bool IsExecutionListMechanicId(
+        string mechanicId) {
+        return string.Equals(
+            mechanicId,
+            ExecutionListMechanic.MechanicId,
+            StringComparison.Ordinal);
+    }
 
     internal static bool HasEnemyJoinAwareMechanic =>
         ActiveMechanic is IEnemyJoinAwareMechanic;
@@ -277,6 +289,71 @@ internal static class EncounterMechanicController {
             $"Encounter mechanic disabled for the current combat: " +
             $"MechanicId={mechanicId}");
         return true;
+    }
+
+    internal static bool TryCreateExecutionListSaveRecipe(
+        out ExecutionListSaveRecipe recipe,
+        out string failureReason) {
+        if (!ReferenceEquals(
+                ActiveMechanic,
+                ExecutionListMechanicInstance)) {
+            recipe = null;
+            failureReason =
+                "The active mechanic is not the registered Execution List instance.";
+            return false;
+        }
+
+        return ExecutionListMechanicInstance
+            .TryCreateSaveRecipe(
+                out recipe,
+                out failureReason);
+    }
+
+    internal static bool TryRestoreExecutionList(
+        EncounterSession session,
+        ExecutionListSaveRecipe recipe,
+        out bool disabledInSettings,
+        out string failureReason) {
+        disabledInSettings = false;
+        failureReason = null;
+        if (session == null) {
+            failureReason =
+                "The Execution List restore has no encounter session.";
+            return false;
+        }
+        if (ActiveSession != null || ActiveMechanic != null) {
+            failureReason =
+                "An encounter mechanic is already owned during The Execution List restoration.";
+            return false;
+        }
+        if (!ModSettings.IsEncounterMechanicEnabled(
+                ExecutionListMechanic.MechanicId)) {
+            disabledInSettings = true;
+            failureReason =
+                "The Execution List is disabled in the current mod settings.";
+            return false;
+        }
+
+        ActiveSession = session;
+        ActiveMechanic = ExecutionListMechanicInstance;
+        try {
+            if (ExecutionListMechanicInstance.TryRestore(
+                    session,
+                    recipe,
+                    out failureReason)) {
+                return true;
+            }
+        } catch (Exception exception) {
+            failureReason =
+                $"The Execution List restoration threw an exception: {exception}";
+        }
+
+        ActiveMechanic = null;
+        ActiveSession = null;
+        CleanupMechanic(
+            ExecutionListMechanicInstance,
+            EncounterMechanicEndReason.LoadedStateReplaced);
+        return false;
     }
 
     internal static void Deactivate(

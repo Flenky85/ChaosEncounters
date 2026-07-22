@@ -21,4 +21,12 @@ internal sealed class EncounterSaveRecord {
     public string LeaderId { get; set; }
     public List<string> InitialEnemyIds { get; set; }
     public List<string> PendingEnemyJoinIds { get; set; }
+    public ExecutionListSaveRecipe ExecutionListRecipe { get; set; }
+}
+
+internal sealed class ExecutionListSaveRecipe {
+    public ExecutionListSaveRecipe() {
+    }
+
+    public List<string> OrderedEnemyIds { get; set; }
 }

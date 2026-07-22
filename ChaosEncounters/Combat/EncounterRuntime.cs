@@ -424,6 +424,17 @@ internal sealed class EncounterRuntime :
             pendingEnemyJoinIds.Add(id);
         }
 
+        ExecutionListSaveRecipe executionListRecipe = null;
+        if (lifecycle == EncounterSaveLifecycle.Active &&
+            EncounterMechanicController
+                .IsExecutionListMechanicId(mechanicId) &&
+            !EncounterMechanicController
+                .TryCreateExecutionListSaveRecipe(
+                    out executionListRecipe,
+                    out failureReason)) {
+            return false;
+        }
+
         record = new EncounterSaveRecord {
             SchemaVersion =
                 EncounterSaveRecord.CurrentSchemaVersion,
@@ -435,7 +446,8 @@ internal sealed class EncounterRuntime :
                 : null,
             LeaderId = leaderId,
             InitialEnemyIds = initialEnemyIds,
-            PendingEnemyJoinIds = pendingEnemyJoinIds
+            PendingEnemyJoinIds = pendingEnemyJoinIds,
+            ExecutionListRecipe = executionListRecipe
         };
         return true;
     }
@@ -483,6 +495,34 @@ internal sealed class EncounterRuntime :
             EncounterSaveLifecycle.Active
             ? EncounterSaveLifecycle.DisabledForCombat
             : record.Lifecycle;
+    }
+
+    internal static bool TryRestoreExecutionList(
+        ExecutionListSaveRecipe recipe,
+        out bool disabledInSettings,
+        out string failureReason) {
+        disabledInSettings = false;
+        failureReason = null;
+        EncounterSession session = CurrentSession;
+        if (session == null) {
+            failureReason =
+                "The restored encounter session is unavailable.";
+            Lifecycle = EncounterSaveLifecycle.DisabledForCombat;
+            return false;
+        }
+
+        bool restored = EncounterMechanicController
+            .TryRestoreExecutionList(
+                session,
+                recipe,
+                out disabledInSettings,
+                out failureReason);
+        SessionActivated = true;
+        RuntimeFaulted = false;
+        Lifecycle = restored
+            ? EncounterSaveLifecycle.Active
+            : EncounterSaveLifecycle.DisabledForCombat;
+        return restored;
     }
 
     internal static void SuppressLoadedCombat() {
