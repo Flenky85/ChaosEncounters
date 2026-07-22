@@ -28,8 +28,19 @@ internal sealed class PendingActivationSaveData {
 
 internal sealed class EncounterMechanicSaveData {
     public ExecutionListSaveRecipe ExecutionList { get; set; }
+    public RisingVengeanceSaveRecipe RisingVengeance { get; set; }
 }
 
 internal sealed class ExecutionListSaveRecipe {
     public List<string> OrderedEnemyIds { get; set; }
+}
+
+internal sealed class RisingVengeanceSaveRecipe {
+    public List<RisingVengeanceMarkedEnemySaveData>
+        MarkedEnemies { get; set; }
+}
+
+internal sealed class RisingVengeanceMarkedEnemySaveData {
+    public string UnitId { get; set; }
+    public int Marks { get; set; }
 }

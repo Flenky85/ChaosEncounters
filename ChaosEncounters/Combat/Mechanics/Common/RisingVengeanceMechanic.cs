@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using ChaosEncounters.Combat.Persistence;
 using ChaosEncounters.UI;
 using Kingmaker;
 using Kingmaker.Blueprints.Classes.Experience;
@@ -10,7 +11,8 @@ using UnityEngine;
 namespace ChaosEncounters.Combat.Mechanics.Common;
 
 internal sealed class RisingVengeanceMechanic :
-    IEncounterMechanic {
+    IEncounterMechanic,
+    IPersistableEncounterMechanic {
     private const string MechanicId = "RisingVengeance";
     private const string HudTitle = "Rising Vengeance";
     private const string HudDescription =
@@ -197,6 +199,215 @@ internal sealed class RisingVengeanceMechanic :
         MarkedEnemies = null;
         ProcessedDeaths = null;
         UnsupportedRankWarningLogged = false;
+    }
+
+    bool IPersistableEncounterMechanic.TryCaptureSaveData(
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (saveData == null) {
+            failureReason =
+                "The Rising Vengeance save-data container is unavailable.";
+            return false;
+        }
+        if (saveData.RisingVengeance != null) {
+            failureReason =
+                "The Rising Vengeance save-data container is already populated.";
+            return false;
+        }
+
+        List<MarkedEnemyState> markedEnemies =
+            MarkedEnemies;
+        if (markedEnemies == null ||
+            ProcessedDeaths == null) {
+            failureReason =
+                "Rising Vengeance is not initialized for save capture.";
+            return false;
+        }
+        if (markedEnemies.Count >
+            EncounterPersistenceValidation.MaximumEntityCount) {
+            failureReason =
+                $"The Rising Vengeance marked-enemy count exceeds {EncounterPersistenceValidation.MaximumEntityCount}.";
+            return false;
+        }
+
+        var savedEnemies =
+            new List<RisingVengeanceMarkedEnemySaveData>(
+                markedEnemies.Count);
+        var uniqueIds = new HashSet<string>(
+            StringComparer.Ordinal);
+        for (int index = 0;
+             index < markedEnemies.Count;
+             index++) {
+            MarkedEnemyState state = markedEnemies[index];
+            BaseUnitEntity unit = state.Unit;
+            if (unit == null ||
+                unit is StarshipEntity ||
+                unit.IsDisposed ||
+                !unit.IsInGame ||
+                !unit.IsInCombat ||
+                !unit.IsPlayerEnemy ||
+                unit.LifeState == null ||
+                unit.LifeState.IsDead ||
+                unit.LifeState.IsFinallyDead) {
+                failureReason =
+                    $"The Rising Vengeance marked enemy at index {index} is not a valid living combat enemy.";
+                return false;
+            }
+
+            string id = unit.UniqueId;
+            if (!EncounterPersistenceValidation
+                    .IsValidEntityId(id)) {
+                failureReason =
+                    $"The Rising Vengeance marked enemy at index {index} has an invalid persistent ID.";
+                return false;
+            }
+            if (!uniqueIds.Add(id)) {
+                failureReason =
+                    $"The Rising Vengeance marked enemy at index {index} has a duplicate persistent ID.";
+                return false;
+            }
+            if (state.Marks < 1 ||
+                state.Marks > MaximumMarks) {
+                failureReason =
+                    $"The Rising Vengeance marked enemy at index {index} has invalid Marks={state.Marks}.";
+                return false;
+            }
+
+            savedEnemies.Add(
+                new RisingVengeanceMarkedEnemySaveData {
+                    UnitId = id,
+                    Marks = state.Marks
+                });
+        }
+
+        saveData.RisingVengeance =
+            new RisingVengeanceSaveRecipe {
+                MarkedEnemies = savedEnemies
+            };
+        return true;
+    }
+
+    bool IPersistableEncounterMechanic.TryRestoreFromSave(
+        EncounterRestoreContext context,
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (MarkedEnemies != null ||
+            ProcessedDeaths != null) {
+            failureReason =
+                "Rising Vengeance is already active.";
+            return false;
+        }
+        if (context == null) {
+            failureReason =
+                "The Rising Vengeance restore context is unavailable.";
+            return false;
+        }
+        if (saveData == null) {
+            failureReason =
+                "The Rising Vengeance save-data container is unavailable.";
+            return false;
+        }
+
+        RisingVengeanceSaveRecipe recipe =
+            saveData.RisingVengeance;
+        if (recipe == null) {
+            failureReason =
+                "The Rising Vengeance save recipe is missing.";
+            return false;
+        }
+        List<RisingVengeanceMarkedEnemySaveData> savedEnemies =
+            recipe.MarkedEnemies;
+        if (savedEnemies == null) {
+            failureReason =
+                "The Rising Vengeance marked-enemy list is missing.";
+            return false;
+        }
+        if (savedEnemies.Count >
+            EncounterPersistenceValidation.MaximumEntityCount) {
+            failureReason =
+                $"The Rising Vengeance marked-enemy count exceeds {EncounterPersistenceValidation.MaximumEntityCount}.";
+            return false;
+        }
+
+        var uniqueIds = new HashSet<string>(
+            StringComparer.Ordinal);
+        for (int index = 0;
+             index < savedEnemies.Count;
+             index++) {
+            RisingVengeanceMarkedEnemySaveData entry =
+                savedEnemies[index];
+            if (entry == null ||
+                !EncounterPersistenceValidation
+                    .IsValidEntityId(entry.UnitId)) {
+                failureReason =
+                    $"The Rising Vengeance saved entry at index {index} has an invalid persistent ID.";
+                return false;
+            }
+            if (!uniqueIds.Add(entry.UnitId)) {
+                failureReason =
+                    $"The Rising Vengeance saved entry at index {index} has a duplicate persistent ID.";
+                return false;
+            }
+            if (entry.Marks < 1 ||
+                entry.Marks > MaximumMarks) {
+                failureReason =
+                    $"The Rising Vengeance saved entry at index {index} has invalid Marks={entry.Marks}.";
+                return false;
+            }
+        }
+
+        var restoredEnemies = new List<MarkedEnemyState>(
+            savedEnemies.Count);
+        for (int index = 0;
+             index < savedEnemies.Count;
+             index++) {
+            RisingVengeanceMarkedEnemySaveData entry =
+                savedEnemies[index];
+            if (!context.TryResolveEnemy(
+                    entry.UnitId,
+                    requireLiving: true,
+                    out BaseUnitEntity unit)) {
+                continue;
+            }
+
+            restoredEnemies.Add(
+                new MarkedEnemyState(
+                    unit,
+                    entry.Marks));
+        }
+
+        MarkedEnemies = restoredEnemies;
+        ProcessedDeaths = new HashSet<BaseUnitEntity>(
+            UnitReferenceComparer.Instance);
+        UnsupportedRankWarningLogged = false;
+
+        for (int index = 0;
+             index < restoredEnemies.Count;
+             index++) {
+            MarkedEnemyState state = restoredEnemies[index];
+            ApplyEffects(
+                state.Unit,
+                state.Marks);
+        }
+
+        if (context.LivingEnemies.Count > 0) {
+            EncounterHud.Show(
+                HudTitle,
+                HudDescription);
+        } else {
+            EncounterHud.Hide();
+        }
+
+        int skippedMarkedCount =
+            savedEnemies.Count - restoredEnemies.Count;
+        Main.LogInfo(
+            $"Rising Vengeance restored: " +
+            $"SavedMarkedCount={savedEnemies.Count} " +
+            $"ResolvedMarkedCount={restoredEnemies.Count} " +
+            $"SkippedMarkedCount={skippedMarkedCount}");
+        return true;
     }
 
     private void AddMarks(
