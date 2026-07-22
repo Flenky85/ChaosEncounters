@@ -870,7 +870,8 @@ internal sealed class EqualizerMechanic :
                 current = member.RegisteredMaximumHitPoints;
             }
 
-            if (member.PendingInitialEqualization) {
+            if (member.PendingInitialEqualization ||
+                direction == PoolChangeDirection.Rebalance) {
                 member.AllocationLowerBound = 1;
                 member.AllocationUpperBound =
                     member.RegisteredMaximumHitPoints;
@@ -1449,15 +1450,51 @@ internal sealed class EqualizerMechanic :
             return;
         }
 
-        Faulted = true;
-        ActiveInstance = null;
-        Main.LogWarning(
-            $"The Equalizer detected a maximum-HP change and disabled itself for the current combat: " +
-            $"Unit={member.Unit.CharacterName}, " +
-            $"OldMaximum={oldValue}, " +
-            $"NewMaximum={member.Health.MaxHitPoints}.");
-        EncounterMechanicController
-            .DisableActiveMechanicForCurrentCombat();
+        try {
+            int newMaximum =
+                member.Health.MaxHitPoints;
+            if (newMaximum <= 0) {
+                throw new InvalidOperationException(
+                    $"The Equalizer member maximum HP became nonpositive: " +
+                    $"Unit={member.Unit.CharacterName}, " +
+                    $"Maximum={newMaximum}.");
+            }
+            if (member.Health.MinHitPoints > 1) {
+                throw new InvalidOperationException(
+                    $"The Equalizer member acquired unsupported minimum HP: " +
+                    $"Unit={member.Unit.CharacterName}, " +
+                    $"MinHitPoints={member.Health.MinHitPoints}.");
+            }
+
+            long maximumDelta = checked(
+                (long)newMaximum -
+                member.RegisteredMaximumHitPoints);
+            long newMaximumPool = checked(
+                MaximumPool + maximumDelta);
+            if (newMaximumPool <= 0) {
+                throw new InvalidOperationException(
+                    "The Equalizer maximum pool became nonpositive after a member maximum-HP change.");
+            }
+            if (newMaximumPool > MaximumSafePool) {
+                throw new InvalidOperationException(
+                    "The Equalizer maximum pool became too large for safe percentage arithmetic.");
+            }
+
+            member.RegisteredMaximumHitPoints =
+                newMaximum;
+            MaximumPool = newMaximumPool;
+            if (CurrentPool > MaximumPool) {
+                CurrentPool = MaximumPool;
+            }
+
+            SynchronizeGroup(
+                PoolChangeDirection.Rebalance,
+                rosterChanged: false);
+        } catch (Exception exception) {
+            FailActive(
+                "The Equalizer failed while rebalancing a member maximum-HP change.",
+                exception);
+        }
     }
 
     private void EnsureWorkBufferCapacity(
@@ -1562,7 +1599,7 @@ internal sealed class EqualizerMechanic :
 
         internal BaseUnitEntity Unit { get; }
         internal PartHealth Health { get; }
-        internal int RegisteredMaximumHitPoints { get; }
+        internal int RegisteredMaximumHitPoints { get; set; }
         internal int RegistrationOrdinal { get; }
         internal int LastSynchronizedRealHP;
         internal int AllocationLowerBound;
@@ -1659,7 +1696,8 @@ internal sealed class EqualizerMechanic :
 
     private enum PoolChangeDirection {
         Damage,
-        Healing
+        Healing,
+        Rebalance
     }
 
     [HarmonyPatch(
