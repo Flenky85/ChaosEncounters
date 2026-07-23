@@ -47,3 +47,7 @@ The Boss uses its followers as a living shield and remains invulnerable until th
 ### The Elite Guard
 
 The Boss and two chosen Guards form an elite defensive unit. The Boss and both Guards begin with 60% damage reduction, which falls to 30% after the first member of the group dies and to 0% after the second. The Guards deal 30% increased damage for the entire encounter.
+
+### Nemesis Protocol
+
+Each character and their pets are linked to one marked enemy. They deal full damage to their linked target, but only 20% damage to other enemies. When a linked target is lost, the protocol assigns another available unlinked enemy at random. If no valid target remains, the group becomes unlinked and deals full damage to all enemies.
