@@ -12,7 +12,7 @@ internal sealed class LinkMechanic :
     private const string MechanicId = "Link";
     private const string MechanicDisplayName = "Links";
     private const string MechanicDescription =
-        "Party members and their pets form linked groups.";
+        "Each party member is paired with one enemy. Matching L1–L6 markers identify each character, their pets, and their linked target.";
     private const int MinimumGroupCount = 1;
     private const int MaximumGroupCount = 6;
     private const int MinimumInitialEnemyCount = 6;
@@ -115,6 +115,9 @@ internal sealed class LinkMechanic :
 
         Groups = groups;
         ApplyGroupMarkers(groups);
+        EncounterHud.Show(
+            DisplayName,
+            Description);
     }
 
     public void HandleRoundStart(int combatRound) {

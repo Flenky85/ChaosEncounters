@@ -13,7 +13,8 @@ internal static class EncounterMechanicController {
     private static readonly IEncounterMechanic[] CommonMechanics = {
         new ExecutionListMechanic(),
         new RisingVengeanceMechanic(),
-        new EqualizerMechanic()
+        new EqualizerMechanic(),
+        new LinkMechanic()
     };
 
     private static readonly IEncounterMechanic[] BossMechanics = {
