@@ -184,6 +184,89 @@ internal sealed class LinkMechanic :
 
     public void HandleUnitLeftCombat(
         BaseUnitEntity unit) {
+        List<LinkGroup> groups = Groups;
+        List<BaseUnitEntity> knownEnemies =
+            KnownEnemies;
+        if (groups == null ||
+            knownEnemies == null ||
+            unit == null) {
+            return;
+        }
+
+        for (int groupIndex = 0;
+             groupIndex < groups.Count;
+             groupIndex++) {
+            LinkGroup group = groups[groupIndex];
+            if (!ReferenceEquals(
+                    group.Owner,
+                    unit)) {
+                continue;
+            }
+
+            BaseUnitEntity linkedEnemy =
+                group.LinkedEnemy;
+            UnitMarker.ClearMarker(group.Owner);
+            for (int petIndex = 0;
+                 petIndex < group.Pets.Count;
+                 petIndex++) {
+                UnitMarker.ClearMarker(
+                    group.Pets[petIndex]);
+            }
+            if (linkedEnemy != null) {
+                UnitMarker.ClearMarker(linkedEnemy);
+                group.LinkedEnemy = null;
+            }
+
+            groups.RemoveAt(groupIndex);
+            RebalanceLinks(groups, knownEnemies);
+            return;
+        }
+
+        for (int groupIndex = 0;
+             groupIndex < groups.Count;
+             groupIndex++) {
+            List<BaseUnitEntity> pets =
+                groups[groupIndex].Pets;
+            for (int petIndex = 0;
+                 petIndex < pets.Count;
+                 petIndex++) {
+                if (!ReferenceEquals(
+                        pets[petIndex],
+                        unit)) {
+                    continue;
+                }
+
+                pets.RemoveAt(petIndex);
+                UnitMarker.ClearMarker(unit);
+                return;
+            }
+        }
+
+        int enemyIndex = FindEnemyIndex(
+            knownEnemies,
+            unit);
+        if (enemyIndex < 0) {
+            return;
+        }
+
+        knownEnemies.RemoveAt(enemyIndex);
+        UnitMarker.ClearMarker(unit);
+        for (int groupIndex = 0;
+             groupIndex < groups.Count;
+             groupIndex++) {
+            LinkGroup group = groups[groupIndex];
+            if (!ReferenceEquals(
+                    group.LinkedEnemy,
+                    unit)) {
+                continue;
+            }
+
+            group.LinkedEnemy = null;
+            RebalanceLinks(groups, knownEnemies);
+            return;
+        }
+
+        return;
     }
 
     public void Deactivate(
