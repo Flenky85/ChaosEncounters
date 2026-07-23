@@ -18,6 +18,9 @@ internal static class ChaosColors {
     internal static readonly Color32 Blue =
         new Color32(78, 130, 190, 255);
 
+    internal static readonly Color32 Violet =
+        new Color32(145, 91, 166, 255);
+
     internal static readonly Color32 Grey =
         new Color32(160, 160, 160, 255);
 }
