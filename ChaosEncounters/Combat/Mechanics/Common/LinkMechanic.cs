@@ -26,6 +26,7 @@ internal sealed class LinkMechanic :
     private static System.Random AssignmentRandom;
 
     private List<LinkGroup> Groups;
+    private List<BaseUnitEntity> KnownEnemies;
 
     public string Id => MechanicId;
     public string DisplayName => MechanicDisplayName;
@@ -113,6 +114,7 @@ internal sealed class LinkMechanic :
             }
         }
 
+        KnownEnemies = eligibleEnemies;
         Groups = groups;
         ApplyGroupMarkers(groups);
         EncounterHud.Show(
@@ -139,6 +141,41 @@ internal sealed class LinkMechanic :
     public void HandleEnemyDeath(
         BaseUnitEntity unit,
         int combatRound) {
+        List<LinkGroup> groups = Groups;
+        List<BaseUnitEntity> knownEnemies =
+            KnownEnemies;
+        if (groups == null ||
+            knownEnemies == null ||
+            unit == null) {
+            return;
+        }
+
+        int enemyIndex = FindEnemyIndex(
+            knownEnemies,
+            unit);
+        if (enemyIndex < 0) {
+            return;
+        }
+
+        knownEnemies.RemoveAt(enemyIndex);
+        UnitMarker.ClearMarker(unit);
+        bool linkedEnemy = false;
+        for (int index = 0;
+             index < groups.Count;
+             index++) {
+            LinkGroup group = groups[index];
+            if (ReferenceEquals(
+                    group.LinkedEnemy,
+                    unit)) {
+                group.LinkedEnemy = null;
+                linkedEnemy = true;
+                break;
+            }
+        }
+
+        if (linkedEnemy) {
+            RebalanceLinks(groups, knownEnemies);
+        }
     }
 
     public void HandleUnitJoinedCombat(
@@ -152,6 +189,7 @@ internal sealed class LinkMechanic :
     public void Deactivate(
         EncounterMechanicEndReason reason) {
         Groups = null;
+        KnownEnemies = null;
     }
 
     private static int CountEligibleOwners(
@@ -205,11 +243,7 @@ internal sealed class LinkMechanic :
     private static void AssignLinkedEnemies(
         List<LinkGroup> groups,
         List<BaseUnitEntity> eligibleEnemies) {
-        System.Random random = AssignmentRandom;
-        if (random == null) {
-            random = new System.Random();
-            AssignmentRandom = random;
-        }
+        System.Random random = GetAssignmentRandom();
 
         for (int index = eligibleEnemies.Count - 1;
              index > 0;
@@ -235,29 +269,169 @@ internal sealed class LinkMechanic :
         for (int index = 0;
              index < groups.Count;
              index++) {
-            LinkGroup group = groups[index];
-            string markerText =
-                GetMarkerText(group.Slot);
-            Color32 markerColor =
-                GetMarkerColor(group.Slot);
+            SynchronizeGroupPresentation(
+                groups[index]);
+        }
+    }
 
-            UnitMarker.SetMarker(
-                group.Owner,
-                markerText,
-                markerColor);
-            for (int petIndex = 0;
-                 petIndex < group.Pets.Count;
-                 petIndex++) {
-                UnitMarker.SetMarker(
-                    group.Pets[petIndex],
-                    markerText,
-                    markerColor);
+    private static void RebalanceLinks(
+        List<LinkGroup> groups,
+        List<BaseUnitEntity> knownEnemies) {
+        int linkedGroupCount = 0;
+        for (int index = 0;
+             index < groups.Count;
+             index++) {
+            LinkGroup group = groups[index];
+            if (group.LinkedEnemy == null) {
+                int availableEnemyCount =
+                    CountAvailableEnemies(
+                        groups,
+                        knownEnemies);
+                if (availableEnemyCount > 0) {
+                    int selectedOrdinal =
+                        GetAssignmentRandom().Next(
+                            availableEnemyCount);
+                    group.LinkedEnemy =
+                        ResolveAvailableEnemy(
+                            groups,
+                            knownEnemies,
+                            selectedOrdinal);
+                }
+
+                SynchronizeGroupPresentation(group);
             }
+            if (group.LinkedEnemy != null) {
+                linkedGroupCount++;
+            }
+        }
+
+        if (linkedGroupCount > 0) {
+            EncounterHud.Show(
+                MechanicDisplayName,
+                MechanicDescription);
+        } else {
+            EncounterHud.Hide();
+        }
+    }
+
+    private static int CountAvailableEnemies(
+        List<LinkGroup> groups,
+        List<BaseUnitEntity> knownEnemies) {
+        int count = 0;
+        for (int index = 0;
+             index < knownEnemies.Count;
+             index++) {
+            BaseUnitEntity enemy = knownEnemies[index];
+            if (IsEligibleInitialEnemy(enemy) &&
+                !IsEnemyLinked(groups, enemy)) {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static BaseUnitEntity ResolveAvailableEnemy(
+        List<LinkGroup> groups,
+        List<BaseUnitEntity> knownEnemies,
+        int selectedOrdinal) {
+        for (int index = 0;
+             index < knownEnemies.Count;
+             index++) {
+            BaseUnitEntity enemy = knownEnemies[index];
+            if (!IsEligibleInitialEnemy(enemy) ||
+                IsEnemyLinked(groups, enemy)) {
+                continue;
+            }
+            if (selectedOrdinal == 0) {
+                return enemy;
+            }
+
+            selectedOrdinal--;
+        }
+
+        throw new InvalidOperationException(
+            "Links could not resolve the selected available enemy.");
+    }
+
+    private static bool IsEnemyLinked(
+        List<LinkGroup> groups,
+        BaseUnitEntity enemy) {
+        for (int index = 0;
+             index < groups.Count;
+             index++) {
+            if (ReferenceEquals(
+                    groups[index].LinkedEnemy,
+                    enemy)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static int FindEnemyIndex(
+        List<BaseUnitEntity> enemies,
+        BaseUnitEntity enemy) {
+        for (int index = 0;
+             index < enemies.Count;
+             index++) {
+            if (ReferenceEquals(
+                    enemies[index],
+                    enemy)) {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static System.Random GetAssignmentRandom() {
+        System.Random random = AssignmentRandom;
+        if (random == null) {
+            random = new System.Random();
+            AssignmentRandom = random;
+        }
+
+        return random;
+    }
+
+    private static void SynchronizeGroupPresentation(
+        LinkGroup group) {
+        BaseUnitEntity linkedEnemy =
+            group.LinkedEnemy;
+        if (linkedEnemy == null) {
+            UnitMarker.ClearMarker(group.Owner);
+            for (int index = 0;
+                 index < group.Pets.Count;
+                 index++) {
+                UnitMarker.ClearMarker(
+                    group.Pets[index]);
+            }
+
+            return;
+        }
+
+        string markerText =
+            GetMarkerText(group.Slot);
+        Color32 markerColor =
+            GetMarkerColor(group.Slot);
+        UnitMarker.SetMarker(
+            group.Owner,
+            markerText,
+            markerColor);
+        for (int index = 0;
+             index < group.Pets.Count;
+             index++) {
             UnitMarker.SetMarker(
-                group.LinkedEnemy,
+                group.Pets[index],
                 markerText,
                 markerColor);
         }
+        UnitMarker.SetMarker(
+            linkedEnemy,
+            markerText,
+            markerColor);
     }
 
     private static string GetMarkerText(int slot) {
