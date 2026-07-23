@@ -12,6 +12,7 @@ namespace ChaosEncounters.Combat;
 
 internal sealed class EncounterRuntime :
     IPartyCombatHandler,
+    IPreparationTurnBeginHandler,
     IRoundStartHandler,
     IRoundEndHandler,
     ITurnStartHandler,
@@ -25,6 +26,7 @@ internal sealed class EncounterRuntime :
     private static bool DuplicateStartWarningLogged;
     private static bool RuntimeFaulted;
     private static bool RuntimeFaultLogged;
+    private static bool ActivationDeferredForLoadedState = true;
     private static EncounterSaveLifecycle? Lifecycle;
 
     internal static void Initialize() {
@@ -36,7 +38,8 @@ internal sealed class EncounterRuntime :
     public void HandleRoundStart(bool isTurnBased) {
         if (!isTurnBased ||
             RuntimeFaulted ||
-            CurrentSession == null) {
+            CurrentSession == null ||
+            !SessionActivated) {
             return;
         }
 
@@ -48,26 +51,26 @@ internal sealed class EncounterRuntime :
                 return;
             }
 
-            int combatRound = game.TurnController.CombatRound;
-            if (!SessionActivated) {
-                SessionActivated = true;
-                EncounterMechanicController.Activate(
-                    CurrentSession);
-                if (Lifecycle ==
-                    EncounterSaveLifecycle.PendingActivation) {
-                    Lifecycle = EncounterMechanicController
-                        .HasActiveMechanic
-                        ? EncounterSaveLifecycle.Active
-                        : EncounterSaveLifecycle
-                            .NoCompatibleCandidate;
-                }
-                ForwardPendingEnemyJoins();
-            }
-
             EncounterMechanicController.HandleRoundStart(
-                combatRound);
+                game.TurnController.CombatRound);
         } catch (Exception exception) {
             FaultRuntime(nameof(HandleRoundStart), exception);
+        }
+    }
+
+    public void HandleBeginPreparationTurn(bool canDeploy) {
+        if (RuntimeFaulted ||
+            CurrentSession == null ||
+            SessionActivated) {
+            return;
+        }
+
+        try {
+            TryActivatePendingEncounter();
+        } catch (Exception exception) {
+            FaultRuntime(
+                nameof(HandleBeginPreparationTurn),
+                exception);
         }
     }
 
@@ -99,14 +102,20 @@ internal sealed class EncounterRuntime :
     public void HandleUnitStartTurn(bool isTurnBased) {
         if (!isTurnBased ||
             RuntimeFaulted ||
-            CurrentSession == null ||
-            !SessionActivated ||
-            EventInvokerExtensions.MechanicEntity is not BaseUnitEntity unit ||
-            !unit.IsInCombat) {
+            CurrentSession == null) {
             return;
         }
 
         try {
+            if (!SessionActivated) {
+                TryActivatePendingEncounter();
+            }
+            if (!SessionActivated ||
+                EventInvokerExtensions.MechanicEntity is not BaseUnitEntity unit ||
+                !unit.IsInCombat) {
+                return;
+            }
+
             int combatRound =
                 Game.Instance.TurnController.CombatRound;
             EncounterMechanicController.HandleUnitTurnStart(
@@ -258,9 +267,7 @@ internal sealed class EncounterRuntime :
             var initialEnemies = new List<BaseUnitEntity>();
             foreach (BaseUnitEntity unit in
                 game.State.AllBaseAwakeUnitsForSure) {
-                if (unit != null &&
-                    unit.IsInCombat &&
-                    unit.IsPlayerEnemy) {
+                if (IsValidInitialEnemy(unit)) {
                     initialEnemies.Add(unit);
                 }
             }
@@ -279,13 +286,14 @@ internal sealed class EncounterRuntime :
             Lifecycle = EncounterSaveLifecycle.PendingActivation;
 
             Main.LogInfo(
-                $"Encounter classified: EligibleEncounterTypes={CurrentSession.Type} " +
-                $"InitialEnemyCount={CurrentSession.InitialEnemies.Count} " +
+                $"Encounter detected (provisional): " +
+                $"EligibleEncounterTypes={CurrentSession.Type} " +
+                $"EnemyCount={CurrentSession.InitialEnemies.Count} " +
                 $"LeaderName={leader?.CharacterName ?? "None"} " +
                 $"LeaderBlueprint={leader?.Blueprint?.name ?? "None"}");
             if (invalidCompositionReason != null) {
                 Main.LogWarning(
-                    $"Encounter classification composition warning: " +
+                    $"Provisional encounter classification composition warning: " +
                     invalidCompositionReason);
             }
         } catch (Exception exception) {
@@ -536,6 +544,7 @@ internal sealed class EncounterRuntime :
     }
 
     internal static void ResetForAreaUnload() {
+        ActivationDeferredForLoadedState = true;
         try {
             ClearRuntimeState(
                 EncounterMechanicEndReason.AreaUnloading);
@@ -543,6 +552,27 @@ internal sealed class EncounterRuntime :
             DamageControl.ClearAllPolicies();
             UnitMarker.ResetForAreaUnload();
             EncounterHud.ResetForAreaUnload();
+        }
+    }
+
+    internal static void CompleteLoadedStateProcessing() {
+        ActivationDeferredForLoadedState = false;
+        if (RuntimeFaulted ||
+            CurrentSession == null ||
+            SessionActivated ||
+            Lifecycle !=
+                EncounterSaveLifecycle.PendingActivation ||
+            Game.Instance?.TurnController
+                ?.IsPreparationTurn != true) {
+            return;
+        }
+
+        try {
+            TryActivatePendingEncounter();
+        } catch (Exception exception) {
+            FaultRuntime(
+                nameof(CompleteLoadedStateProcessing),
+                exception);
         }
     }
 
@@ -674,23 +704,110 @@ internal sealed class EncounterRuntime :
         return true;
     }
 
-    private static void ForwardPendingEnemyJoins() {
+    private static bool TryActivatePendingEncounter() {
+        if (ActivationDeferredForLoadedState ||
+            RuntimeFaulted ||
+            CurrentSession == null ||
+            SessionActivated ||
+            Lifecycle !=
+                EncounterSaveLifecycle.PendingActivation) {
+            return false;
+        }
+
+        Game game = Game.Instance;
+        if (game?.Player?.IsInCombat != true ||
+            game?.TurnController?.TbActive != true ||
+            game.CurrentMode == GameModeType.SpaceCombat ||
+            game.CurrentMode == GameModeType.StarSystem) {
+            return false;
+        }
+        IEnumerable<BaseUnitEntity> awakeUnits =
+            game.State?.AllBaseAwakeUnitsForSure;
+        if (awakeUnits == null) {
+            throw new InvalidOperationException(
+                "The awake-unit collection is unavailable at encounter activation.");
+        }
+
+        var initialEnemies = new List<BaseUnitEntity>();
+        foreach (BaseUnitEntity unit in awakeUnits) {
+            if (IsValidInitialEnemy(unit)) {
+                initialEnemies.Add(unit);
+            }
+        }
+
         List<BaseUnitEntity> pendingEnemyJoins =
             PendingEnemyJoins;
         PendingEnemyJoins = null;
-        if (pendingEnemyJoins == null ||
-            !EncounterMechanicController
-                .HasEnemyJoinAwareMechanic) {
-            return;
+        if (pendingEnemyJoins != null) {
+            for (int pendingIndex = 0;
+                 pendingIndex < pendingEnemyJoins.Count;
+                 pendingIndex++) {
+                BaseUnitEntity pendingEnemy =
+                    pendingEnemyJoins[pendingIndex];
+                if (!IsValidInitialEnemy(pendingEnemy)) {
+                    continue;
+                }
+
+                bool alreadyIncluded = false;
+                for (int enemyIndex = 0;
+                     enemyIndex < initialEnemies.Count;
+                     enemyIndex++) {
+                    if (ReferenceEquals(
+                            initialEnemies[enemyIndex],
+                            pendingEnemy)) {
+                        alreadyIncluded = true;
+                        break;
+                    }
+                }
+                if (!alreadyIncluded) {
+                    initialEnemies.Add(pendingEnemy);
+                }
+            }
         }
 
-        for (int index = 0;
-             index < pendingEnemyJoins.Count;
-             index++) {
-            EncounterMechanicController
-                .HandleEnemyJoined(
-                    pendingEnemyJoins[index]);
+        EncounterClassifier.Classify(
+            initialEnemies,
+            out EncounterType encounterType,
+            out BaseUnitEntity leader,
+            out _,
+            out _,
+            out string invalidCompositionReason);
+        CurrentSession = new EncounterSession(
+            initialEnemies,
+            encounterType,
+            leader);
+
+        Main.LogInfo(
+            $"Encounter classified: EligibleEncounterTypes={CurrentSession.Type} " +
+            $"InitialEnemyCount={CurrentSession.InitialEnemies.Count} " +
+            $"LeaderName={leader?.CharacterName ?? "None"} " +
+            $"LeaderBlueprint={leader?.Blueprint?.name ?? "None"}");
+        if (invalidCompositionReason != null) {
+            Main.LogWarning(
+                $"Encounter classification composition warning: " +
+                invalidCompositionReason);
         }
+
+        SessionActivated = true;
+        EncounterMechanicController.Activate(CurrentSession);
+        Lifecycle = EncounterMechanicController
+            .HasActiveMechanic
+            ? EncounterSaveLifecycle.Active
+            : EncounterSaveLifecycle.NoCompatibleCandidate;
+        return true;
+    }
+
+    private static bool IsValidInitialEnemy(
+        BaseUnitEntity unit) {
+        return unit != null &&
+               unit is not StarshipEntity &&
+               !unit.IsDisposed &&
+               unit.IsInGame &&
+               unit.IsInCombat &&
+               unit.IsPlayerEnemy &&
+               unit.LifeState != null &&
+               !unit.LifeState.IsDead &&
+               !unit.LifeState.IsFinallyDead;
     }
 
     private static void FaultRuntime(
