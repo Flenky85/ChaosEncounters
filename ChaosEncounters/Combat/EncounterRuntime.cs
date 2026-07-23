@@ -257,10 +257,31 @@ internal sealed class EncounterRuntime :
 
             var initialEnemies = new List<BaseUnitEntity>();
             foreach (BaseUnitEntity unit in
-                game.State.AllBaseAwakeUnitsForSure) {
-                if (unit != null &&
-                    unit.IsInCombat &&
-                    unit.IsPlayerEnemy) {
+                game.State.AllBaseUnits.All) {
+                if (unit == null ||
+                    unit is StarshipEntity ||
+                    unit.IsDisposed ||
+                    !unit.IsInGame ||
+                    !unit.IsInCombat ||
+                    !unit.IsPlayerEnemy ||
+                    unit.LifeState == null ||
+                    unit.LifeState.IsDead ||
+                    unit.LifeState.IsFinallyDead) {
+                    continue;
+                }
+
+                bool alreadyIncluded = false;
+                for (int index = 0;
+                     index < initialEnemies.Count;
+                     index++) {
+                    if (ReferenceEquals(
+                            initialEnemies[index],
+                            unit)) {
+                        alreadyIncluded = true;
+                        break;
+                    }
+                }
+                if (!alreadyIncluded) {
                     initialEnemies.Add(unit);
                 }
             }
