@@ -34,6 +34,9 @@ internal static class EncounterMechanicController {
     internal static bool HasEnemyJoinAwareMechanic =>
         ActiveMechanic is IEnemyJoinAwareMechanic;
 
+    internal static bool HasUnitCombatLifecycleAwareMechanic =>
+        ActiveMechanic is IUnitCombatLifecycleAwareMechanic;
+
     internal static IReadOnlyList<IEncounterMechanic>
         GetRegisteredMechanics(EncounterType encounterType) {
         switch (encounterType) {
@@ -254,11 +257,25 @@ internal static class EncounterMechanicController {
         }
     }
 
-    internal static void HandleEnemyJoined(
+    internal static void HandleUnitJoinedCombat(
+        BaseUnitEntity unit) {
+        IEncounterMechanic mechanic = ActiveMechanic;
+        if (mechanic is
+            IUnitCombatLifecycleAwareMechanic lifecycleHandler) {
+            lifecycleHandler.HandleUnitJoinedCombat(unit);
+            return;
+        }
+        if (unit.IsPlayerEnemy &&
+            mechanic is IEnemyJoinAwareMechanic enemyHandler) {
+            enemyHandler.HandleEnemyJoined(unit);
+        }
+    }
+
+    internal static void HandleUnitLeftCombat(
         BaseUnitEntity unit) {
         if (ActiveMechanic is
-            IEnemyJoinAwareMechanic handler) {
-            handler.HandleEnemyJoined(unit);
+            IUnitCombatLifecycleAwareMechanic handler) {
+            handler.HandleUnitLeftCombat(unit);
         }
     }
 

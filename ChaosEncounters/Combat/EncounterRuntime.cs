@@ -170,22 +170,22 @@ internal sealed class EncounterRuntime :
     public void HandleUnitJoinCombat(BaseUnitEntity unit) {
         if (RuntimeFaulted ||
             CurrentSession == null ||
-            (SessionActivated &&
-             !EncounterMechanicController
-                 .HasEnemyJoinAwareMechanic) ||
             unit == null ||
             unit.IsDisposed ||
             unit.LifeState == null ||
             unit.LifeState.IsDead ||
-            !unit.IsInCombat ||
-            !unit.IsPlayerEnemy) {
+            !unit.IsInCombat) {
             return;
         }
 
         try {
             if (SessionActivated) {
                 EncounterMechanicController
-                    .HandleEnemyJoined(unit);
+                    .HandleUnitJoinedCombat(unit);
+                return;
+            }
+
+            if (!unit.IsPlayerEnemy) {
                 return;
             }
 
@@ -214,6 +214,23 @@ internal sealed class EncounterRuntime :
     }
 
     public void HandleUnitLeaveCombat(BaseUnitEntity unit) {
+        if (RuntimeFaulted ||
+            CurrentSession == null ||
+            !SessionActivated ||
+            !EncounterMechanicController
+                .HasUnitCombatLifecycleAwareMechanic ||
+            unit == null) {
+            return;
+        }
+
+        try {
+            EncounterMechanicController
+                .HandleUnitLeftCombat(unit);
+        } catch (Exception exception) {
+            FaultRuntime(
+                nameof(HandleUnitLeaveCombat),
+                exception);
+        }
     }
 
     public void HandlePartyCombatStateChanged(bool inCombat) {
@@ -700,8 +717,10 @@ internal sealed class EncounterRuntime :
             PendingEnemyJoins;
         PendingEnemyJoins = null;
         if (pendingEnemyJoins == null ||
-            !EncounterMechanicController
-                .HasEnemyJoinAwareMechanic) {
+            (!EncounterMechanicController
+                 .HasUnitCombatLifecycleAwareMechanic &&
+             !EncounterMechanicController
+                 .HasEnemyJoinAwareMechanic)) {
             return;
         }
 
@@ -709,7 +728,7 @@ internal sealed class EncounterRuntime :
              index < pendingEnemyJoins.Count;
              index++) {
             EncounterMechanicController
-                .HandleEnemyJoined(
+                .HandleUnitJoinedCombat(
                     pendingEnemyJoins[index]);
         }
     }

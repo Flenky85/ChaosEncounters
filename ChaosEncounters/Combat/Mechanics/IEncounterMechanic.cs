@@ -34,6 +34,11 @@ internal interface IEnemyJoinAwareMechanic {
     void HandleEnemyJoined(BaseUnitEntity unit);
 }
 
+internal interface IUnitCombatLifecycleAwareMechanic {
+    void HandleUnitJoinedCombat(BaseUnitEntity unit);
+    void HandleUnitLeftCombat(BaseUnitEntity unit);
+}
+
 internal interface IPersistableEncounterMechanic {
     bool TryCaptureSaveData(
         EncounterMechanicSaveData saveData,
