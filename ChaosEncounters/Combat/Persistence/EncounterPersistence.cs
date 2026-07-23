@@ -118,8 +118,6 @@ internal sealed class EncounterPersistence :
                 $"Encounter loaded-state processing failed: {exception}");
             TrySuppressLoadedCombat(
                 "unexpected loaded-state processing failure");
-        } finally {
-            EncounterRuntime.CompleteLoadedStateProcessing();
         }
     }
 
