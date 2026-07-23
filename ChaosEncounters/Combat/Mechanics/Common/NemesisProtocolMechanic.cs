@@ -7,14 +7,14 @@ using UnityEngine;
 
 namespace ChaosEncounters.Combat.Mechanics.Common;
 
-internal sealed class LinkMechanic :
+internal sealed class NemesisProtocolMechanic :
     IEncounterMechanic,
     IUnitCombatLifecycleAwareMechanic,
     IPersistableEncounterMechanic {
-    private const string MechanicId = "Link";
-    private const string MechanicDisplayName = "Links";
+    internal const string MechanicId = "NemesisProtocol";
+    private const string MechanicDisplayName = "Nemesis Protocol";
     private const string MechanicDescription =
-        "Each character and their pets are linked to one marked enemy. They deal full damage to that enemy and 20% damage to other enemies. When a link is lost, it moves to an available unlinked enemy; without a link, the group deals full damage to all enemies.";
+        "Each character and their pets are linked to one marked enemy. They deal full damage to their linked target, but only 20% damage to other enemies. When a linked target is lost, the protocol assigns another available unlinked enemy at random. If no valid target remains, the group becomes unlinked and deals full damage to all enemies.";
     private const int MinimumGroupCount = 1;
     private const int MaximumGroupCount = 6;
     private const int MinimumInitialEnemyCount = 6;
@@ -28,7 +28,7 @@ internal sealed class LinkMechanic :
 
     private static System.Random AssignmentRandom;
 
-    private List<LinkGroup> Groups;
+    private List<NemesisProtocolGroup> Groups;
     private List<BaseUnitEntity> KnownEnemies;
 
     public string Id => MechanicId;
@@ -67,22 +67,22 @@ internal sealed class LinkMechanic :
     public void Activate(EncounterSession session) {
         if (session == null) {
             throw new InvalidOperationException(
-                "Links requires an encounter session.");
+                "Nemesis Protocol requires an encounter session.");
         }
         if (Groups != null) {
             throw new InvalidOperationException(
-                "Links is already active.");
+                "Nemesis Protocol is already active.");
         }
         if (!session.SupportsEncounterType(
                 EncounterType.Common)) {
             throw new InvalidOperationException(
-                "Links requires Common encounter eligibility.");
+                "Nemesis Protocol requires Common encounter eligibility.");
         }
 
         Game game = Game.Instance;
         if (game?.Player == null) {
             throw new InvalidOperationException(
-                "Links requires an available player.");
+                "Nemesis Protocol requires an available player.");
         }
 
         List<BaseUnitEntity> party = game.Player.Party;
@@ -90,10 +90,10 @@ internal sealed class LinkMechanic :
             game.Player.PartyAndPets;
         if (party == null || partyAndPets == null) {
             throw new InvalidOperationException(
-                "Links requires available party collections.");
+                "Nemesis Protocol requires available party collections.");
         }
 
-        List<LinkGroup> groups =
+        List<NemesisProtocolGroup> groups =
             BuildGroups(party, partyAndPets);
         List<BaseUnitEntity> eligibleEnemies =
             BuildEligibleInitialEnemies(session);
@@ -104,7 +104,7 @@ internal sealed class LinkMechanic :
             enemyCount < MinimumInitialEnemyCount ||
             enemyCount < ownerCount) {
             throw new InvalidOperationException(
-                "Links activation requirements changed before group construction completed.");
+                "Nemesis Protocol activation requirements changed before group construction completed.");
         }
 
         AssignLinkedEnemies(groups, eligibleEnemies);
@@ -113,7 +113,7 @@ internal sealed class LinkMechanic :
              index++) {
             if (groups[index].LinkedEnemy == null) {
                 throw new InvalidOperationException(
-                    "Links could not assign an eligible initial enemy to every group.");
+                    "Nemesis Protocol could not assign an eligible initial enemy to every group.");
             }
         }
 
@@ -144,7 +144,7 @@ internal sealed class LinkMechanic :
     public void HandleEnemyDeath(
         BaseUnitEntity unit,
         int combatRound) {
-        List<LinkGroup> groups = Groups;
+        List<NemesisProtocolGroup> groups = Groups;
         List<BaseUnitEntity> knownEnemies =
             KnownEnemies;
         if (groups == null ||
@@ -166,7 +166,7 @@ internal sealed class LinkMechanic :
         for (int index = 0;
              index < groups.Count;
              index++) {
-            LinkGroup group = groups[index];
+            NemesisProtocolGroup group = groups[index];
             if (ReferenceEquals(
                     group.LinkedEnemy,
                     unit)) {
@@ -177,13 +177,15 @@ internal sealed class LinkMechanic :
         }
 
         if (linkedEnemy) {
-            RebalanceLinks(groups, knownEnemies);
+            RebalanceNemesisAssignments(
+                groups,
+                knownEnemies);
         }
     }
 
     public void HandleUnitJoinedCombat(
         BaseUnitEntity unit) {
-        List<LinkGroup> groups = Groups;
+        List<NemesisProtocolGroup> groups = Groups;
         List<BaseUnitEntity> knownEnemies =
             KnownEnemies;
         if (groups == null ||
@@ -197,7 +199,8 @@ internal sealed class LinkMechanic :
             for (int groupIndex = 0;
                  groupIndex < groups.Count;
                  groupIndex++) {
-                LinkGroup group = groups[groupIndex];
+                NemesisProtocolGroup group =
+                    groups[groupIndex];
                 if (!ReferenceEquals(
                         group.Owner,
                         unit.Master)) {
@@ -230,14 +233,16 @@ internal sealed class LinkMechanic :
             }
 
             knownEnemies.Add(unit);
-            RebalanceLinks(groups, knownEnemies);
+            RebalanceNemesisAssignments(
+                groups,
+                knownEnemies);
             return;
         }
     }
 
     public void HandleUnitLeftCombat(
         BaseUnitEntity unit) {
-        List<LinkGroup> groups = Groups;
+        List<NemesisProtocolGroup> groups = Groups;
         List<BaseUnitEntity> knownEnemies =
             KnownEnemies;
         if (groups == null ||
@@ -249,7 +254,8 @@ internal sealed class LinkMechanic :
         for (int groupIndex = 0;
              groupIndex < groups.Count;
              groupIndex++) {
-            LinkGroup group = groups[groupIndex];
+            NemesisProtocolGroup group =
+                groups[groupIndex];
             if (!ReferenceEquals(
                     group.Owner,
                     unit)) {
@@ -276,7 +282,9 @@ internal sealed class LinkMechanic :
             }
 
             groups.RemoveAt(groupIndex);
-            RebalanceLinks(groups, knownEnemies);
+            RebalanceNemesisAssignments(
+                groups,
+                knownEnemies);
             return;
         }
 
@@ -314,7 +322,8 @@ internal sealed class LinkMechanic :
         for (int groupIndex = 0;
              groupIndex < groups.Count;
              groupIndex++) {
-            LinkGroup group = groups[groupIndex];
+            NemesisProtocolGroup group =
+                groups[groupIndex];
             if (!ReferenceEquals(
                     group.LinkedEnemy,
                     unit)) {
@@ -322,7 +331,9 @@ internal sealed class LinkMechanic :
             }
 
             group.LinkedEnemy = null;
-            RebalanceLinks(groups, knownEnemies);
+            RebalanceNemesisAssignments(
+                groups,
+                knownEnemies);
             return;
         }
 
@@ -335,26 +346,27 @@ internal sealed class LinkMechanic :
         failureReason = null;
         if (saveData == null) {
             failureReason =
-                "The Links save-data container is unavailable.";
+                "The Nemesis Protocol save-data container is unavailable.";
             return false;
         }
-        if (saveData.Link != null) {
+        if (saveData.NemesisProtocol != null) {
             failureReason =
-                "The Links save-data container is already populated.";
+                "The Nemesis Protocol save-data container is already populated.";
             return false;
         }
 
-        List<LinkGroup> groups = Groups;
+        List<NemesisProtocolGroup> groups =
+            Groups;
         List<BaseUnitEntity> knownEnemies =
             KnownEnemies;
         if (groups == null || knownEnemies == null) {
             failureReason =
-                "Links is not initialized for save capture.";
+                "Nemesis Protocol is not initialized for save capture.";
             return false;
         }
         if (groups.Count > MaximumGroupCount) {
             failureReason =
-                $"The Links group count exceeds {MaximumGroupCount}.";
+                $"The Nemesis Protocol group count exceeds {MaximumGroupCount}.";
             return false;
         }
 
@@ -369,17 +381,18 @@ internal sealed class LinkMechanic :
                 !EncounterPersistenceValidation
                     .IsValidEntityId(enemyId)) {
                 failureReason =
-                    $"The Links known enemy at index {index} is not a valid living combat enemy.";
+                    $"The Nemesis Protocol known enemy at index {index} is not a valid living combat enemy.";
                 return false;
             }
             if (!knownEnemyIds.Add(enemyId)) {
                 failureReason =
-                    $"The Links known enemy at index {index} has a duplicate persistent ID.";
+                    $"The Nemesis Protocol known enemy at index {index} has a duplicate persistent ID.";
                 return false;
             }
         }
 
-        var savedGroups = new List<LinkGroupSaveData>(
+        var savedGroups =
+            new List<NemesisProtocolGroupSaveData>(
             groups.Count);
         var uniqueSlots = new HashSet<int>();
         var uniqueOwnerIds = new HashSet<string>(
@@ -389,13 +402,14 @@ internal sealed class LinkMechanic :
         for (int index = 0;
              index < groups.Count;
              index++) {
-            LinkGroup group = groups[index];
+            NemesisProtocolGroup group =
+                groups[index];
             if (group == null ||
                 group.Slot < MinimumGroupCount ||
                 group.Slot > MaximumGroupCount ||
                 !uniqueSlots.Add(group.Slot)) {
                 failureReason =
-                    $"The Links group at index {index} has an invalid or duplicate slot.";
+                    $"The Nemesis Protocol group at index {index} has an invalid or duplicate slot.";
                 return false;
             }
 
@@ -406,7 +420,7 @@ internal sealed class LinkMechanic :
                     .IsValidEntityId(ownerId) ||
                 !uniqueOwnerIds.Add(ownerId)) {
                 failureReason =
-                    $"The Links group at index {index} has an invalid or duplicate owner.";
+                    $"The Nemesis Protocol group at index {index} has an invalid or duplicate owner.";
                 return false;
             }
 
@@ -423,20 +437,21 @@ internal sealed class LinkMechanic :
                         .IsValidEntityId(linkedEnemyId) ||
                     !uniqueTargetIds.Add(linkedEnemyId)) {
                     failureReason =
-                        $"The Links group at index {index} has an invalid, unknown, or duplicate linked enemy.";
+                        $"The Nemesis Protocol group at index {index} has an invalid, unknown, or duplicate linked enemy.";
                     return false;
                 }
             }
 
             savedGroups.Add(
-                new LinkGroupSaveData {
+                new NemesisProtocolGroupSaveData {
                     Slot = group.Slot,
                     OwnerId = ownerId,
                     LinkedEnemyId = linkedEnemyId
                 });
         }
 
-        saveData.Link = new LinkSaveRecipe {
+        saveData.NemesisProtocol =
+            new NemesisProtocolSaveRecipe {
             Groups = savedGroups
         };
         return true;
@@ -449,31 +464,43 @@ internal sealed class LinkMechanic :
         failureReason = null;
         if (Groups != null || KnownEnemies != null) {
             failureReason =
-                "Links is already active.";
+                "Nemesis Protocol is already active.";
             return false;
         }
         if (context == null) {
             failureReason =
-                "The Links restore context is unavailable.";
+                "The Nemesis Protocol restore context is unavailable.";
             return false;
         }
 
-        LinkSaveRecipe recipe = saveData?.Link;
-        if (recipe == null) {
+        NemesisProtocolSaveRecipe currentRecipe =
+            saveData?.NemesisProtocol;
+        NemesisProtocolSaveRecipe legacyRecipe =
+            saveData?.LegacyLink;
+        if (currentRecipe != null &&
+            legacyRecipe != null) {
             failureReason =
-                "The Links save recipe is missing.";
+                "The Nemesis Protocol save data contains both current and legacy recipes.";
             return false;
         }
-        List<LinkGroupSaveData> savedGroups =
+
+        NemesisProtocolSaveRecipe recipe =
+            currentRecipe ?? legacyRecipe;
+        if (recipe == null) {
+            failureReason =
+                "The Nemesis Protocol save recipe is missing.";
+            return false;
+        }
+        List<NemesisProtocolGroupSaveData> savedGroups =
             recipe.Groups;
         if (savedGroups == null) {
             failureReason =
-                "The Links saved group list is missing.";
+                "The Nemesis Protocol saved group list is missing.";
             return false;
         }
         if (savedGroups.Count > MaximumGroupCount) {
             failureReason =
-                $"The Links saved group count exceeds {MaximumGroupCount}.";
+                $"The Nemesis Protocol saved group count exceeds {MaximumGroupCount}.";
             return false;
         }
 
@@ -485,21 +512,21 @@ internal sealed class LinkMechanic :
         for (int index = 0;
              index < savedGroups.Count;
              index++) {
-            LinkGroupSaveData entry =
+            NemesisProtocolGroupSaveData entry =
                 savedGroups[index];
             if (entry == null ||
                 entry.Slot < MinimumGroupCount ||
                 entry.Slot > MaximumGroupCount ||
                 !uniqueSlots.Add(entry.Slot)) {
                 failureReason =
-                    $"The Links saved group at index {index} has an invalid or duplicate slot.";
+                    $"The Nemesis Protocol saved group at index {index} has an invalid or duplicate slot.";
                 return false;
             }
             if (!EncounterPersistenceValidation
                     .IsValidEntityId(entry.OwnerId) ||
                 !uniqueOwnerIds.Add(entry.OwnerId)) {
                 failureReason =
-                    $"The Links saved group at index {index} has an invalid or duplicate owner ID.";
+                    $"The Nemesis Protocol saved group at index {index} has an invalid or duplicate owner ID.";
                 return false;
             }
             if (entry.LinkedEnemyId != null &&
@@ -509,7 +536,7 @@ internal sealed class LinkMechanic :
                  !uniqueTargetIds.Add(
                      entry.LinkedEnemyId))) {
                 failureReason =
-                    $"The Links saved group at index {index} has an invalid or duplicate linked-enemy ID.";
+                    $"The Nemesis Protocol saved group at index {index} has an invalid or duplicate linked-enemy ID.";
                 return false;
             }
         }
@@ -521,7 +548,7 @@ internal sealed class LinkMechanic :
             game?.Player?.PartyAndPets;
         if (party == null || partyAndPets == null) {
             failureReason =
-                "Links requires available party collections during restoration.";
+                "Nemesis Protocol requires available party collections during restoration.";
             return false;
         }
 
@@ -544,29 +571,30 @@ internal sealed class LinkMechanic :
                     .IsValidEntityId(enemyId) ||
                 !knownEnemyIds.Add(enemyId)) {
                 failureReason =
-                    $"The Links loaded enemy at index {index} has an invalid or duplicate persistent ID.";
+                    $"The Nemesis Protocol loaded enemy at index {index} has an invalid or duplicate persistent ID.";
                 return false;
             }
             restoredKnownEnemies.Add(enemy);
         }
 
-        var restoredGroups = new List<LinkGroup>(
+        var restoredGroups =
+            new List<NemesisProtocolGroup>(
             savedGroups.Count);
         for (int index = 0;
              index < savedGroups.Count;
              index++) {
-            LinkGroupSaveData entry =
+            NemesisProtocolGroupSaveData entry =
                 savedGroups[index];
             if (!TryResolveOwner(
                     party,
                     entry.OwnerId,
                     out BaseUnitEntity owner)) {
                 failureReason =
-                    $"The Links owner for saved group index {index} could not be restored.";
+                    $"The Nemesis Protocol owner for saved group index {index} could not be restored.";
                 return false;
             }
 
-            var group = new LinkGroup(
+            var group = new NemesisProtocolGroup(
                 entry.Slot,
                 owner);
             if (entry.LinkedEnemyId != null) {
@@ -578,7 +606,7 @@ internal sealed class LinkMechanic :
                         restoredKnownEnemies,
                         linkedEnemy) < 0) {
                     failureReason =
-                        $"The Links target for saved group index {index} could not be restored.";
+                        $"The Nemesis Protocol target for saved group index {index} could not be restored.";
                     return false;
                 }
                 group.LinkedEnemy = linkedEnemy;
@@ -599,7 +627,7 @@ internal sealed class LinkMechanic :
             for (int groupIndex = 0;
                  groupIndex < restoredGroups.Count;
                  groupIndex++) {
-                LinkGroup group =
+                NemesisProtocolGroup group =
                     restoredGroups[groupIndex];
                 if (!ReferenceEquals(
                         group.Owner,
@@ -621,7 +649,8 @@ internal sealed class LinkMechanic :
         for (int index = 0;
              index < restoredGroups.Count;
              index++) {
-            LinkGroup group = restoredGroups[index];
+            NemesisProtocolGroup group =
+                restoredGroups[index];
             SynchronizeGroupState(group);
             if (group.LinkedEnemy != null) {
                 linkedGroupCount++;
@@ -693,7 +722,7 @@ internal sealed class LinkMechanic :
     }
 
     private static void AssignLinkedEnemies(
-        List<LinkGroup> groups,
+        List<NemesisProtocolGroup> groups,
         List<BaseUnitEntity> eligibleEnemies) {
         System.Random random = GetAssignmentRandom();
 
@@ -717,7 +746,7 @@ internal sealed class LinkMechanic :
     }
 
     private static void ApplyGroupMarkers(
-        List<LinkGroup> groups) {
+        List<NemesisProtocolGroup> groups) {
         for (int index = 0;
              index < groups.Count;
              index++) {
@@ -726,14 +755,15 @@ internal sealed class LinkMechanic :
         }
     }
 
-    private static void RebalanceLinks(
-        List<LinkGroup> groups,
+    private static void RebalanceNemesisAssignments(
+        List<NemesisProtocolGroup> groups,
         List<BaseUnitEntity> knownEnemies) {
         int linkedGroupCount = 0;
         for (int index = 0;
              index < groups.Count;
              index++) {
-            LinkGroup group = groups[index];
+            NemesisProtocolGroup group =
+                groups[index];
             if (group.LinkedEnemy == null) {
                 int availableEnemyCount =
                     CountAvailableEnemies(
@@ -767,7 +797,7 @@ internal sealed class LinkMechanic :
     }
 
     private static int CountAvailableEnemies(
-        List<LinkGroup> groups,
+        List<NemesisProtocolGroup> groups,
         List<BaseUnitEntity> knownEnemies) {
         int count = 0;
         for (int index = 0;
@@ -784,7 +814,7 @@ internal sealed class LinkMechanic :
     }
 
     private static BaseUnitEntity ResolveAvailableEnemy(
-        List<LinkGroup> groups,
+        List<NemesisProtocolGroup> groups,
         List<BaseUnitEntity> knownEnemies,
         int selectedOrdinal) {
         for (int index = 0;
@@ -803,11 +833,11 @@ internal sealed class LinkMechanic :
         }
 
         throw new InvalidOperationException(
-            "Links could not resolve the selected available enemy.");
+            "Nemesis Protocol could not resolve the selected available enemy.");
     }
 
     private static bool IsEnemyLinked(
-        List<LinkGroup> groups,
+        List<NemesisProtocolGroup> groups,
         BaseUnitEntity enemy) {
         for (int index = 0;
              index < groups.Count;
@@ -887,7 +917,7 @@ internal sealed class LinkMechanic :
     }
 
     private static void SynchronizeGroupState(
-        LinkGroup group) {
+        NemesisProtocolGroup group) {
         BaseUnitEntity linkedEnemy =
             group.LinkedEnemy;
         if (linkedEnemy == null) {
@@ -955,7 +985,7 @@ internal sealed class LinkMechanic :
                 throw new ArgumentOutOfRangeException(
                     nameof(slot),
                     slot,
-                    "Links requires a group slot from 1 through 6.");
+                    "Nemesis Protocol requires a group slot from 1 through 6.");
         }
     }
 
@@ -977,14 +1007,15 @@ internal sealed class LinkMechanic :
                 throw new ArgumentOutOfRangeException(
                     nameof(slot),
                     slot,
-                    "Links requires a group slot from 1 through 6.");
+                    "Nemesis Protocol requires a group slot from 1 through 6.");
         }
     }
 
-    private static List<LinkGroup> BuildGroups(
+    private static List<NemesisProtocolGroup> BuildGroups(
         List<BaseUnitEntity> party,
         List<BaseUnitEntity> partyAndPets) {
-        var groups = new List<LinkGroup>();
+        var groups =
+            new List<NemesisProtocolGroup>();
         for (int index = 0;
              index < party.Count;
              index++) {
@@ -994,11 +1025,11 @@ internal sealed class LinkMechanic :
             }
             if (groups.Count == MaximumGroupCount) {
                 throw new InvalidOperationException(
-                    "Links supports at most six eligible party owners.");
+                    "Nemesis Protocol supports at most six eligible party owners.");
             }
 
             groups.Add(
-                new LinkGroup(
+                new NemesisProtocolGroup(
                     groups.Count + 1,
                     owner));
         }
@@ -1018,7 +1049,8 @@ internal sealed class LinkMechanic :
             for (int groupIndex = 0;
                  groupIndex < groups.Count;
                  groupIndex++) {
-                LinkGroup group = groups[groupIndex];
+                NemesisProtocolGroup group =
+                    groups[groupIndex];
                 if (ReferenceEquals(
                         master,
                         group.Owner)) {
@@ -1066,13 +1098,13 @@ internal sealed class LinkMechanic :
                enemy.LifeState.IsConscious;
     }
 
-    private sealed class LinkGroup {
+    private sealed class NemesisProtocolGroup {
         internal int Slot { get; }
         internal BaseUnitEntity Owner { get; }
         internal List<BaseUnitEntity> Pets { get; }
         internal BaseUnitEntity LinkedEnemy { get; set; }
 
-        internal LinkGroup(
+        internal NemesisProtocolGroup(
             int slot,
             BaseUnitEntity owner) {
             Slot = slot;

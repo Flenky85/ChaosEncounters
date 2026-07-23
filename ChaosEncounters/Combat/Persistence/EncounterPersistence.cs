@@ -166,6 +166,13 @@ internal sealed class EncounterPersistence :
                 "the record does not correspond to a loaded terrestrial combat");
             return;
         }
+        if (record.Lifecycle ==
+            EncounterSaveLifecycle.Active) {
+            record.MechanicId =
+                EncounterMechanicController
+                    .NormalizeLegacyMechanicIdForRestore(
+                        record.MechanicId);
+        }
 
         Main.LogInfo(
             $"Encounter loaded record found and parsed: Lifecycle={record.Lifecycle} " +

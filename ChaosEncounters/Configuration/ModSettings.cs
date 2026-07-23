@@ -6,6 +6,10 @@ namespace ChaosEncounters.Configuration;
 internal static class ModSettings {
     private const int CurrentVersion = 1;
     private const string SettingsFileName = "Settings.json";
+    private const string LegacyDisabledNemesisProtocolId =
+        "Link";
+    private const string CurrentDisabledNemesisProtocolId =
+        "NemesisProtocol";
 
     private static readonly HashSet<string>
         DisabledEncounterMechanicIds =
@@ -46,6 +50,18 @@ internal static class ModSettings {
             foreach (string mechanicId in
                 settings.DisabledEncounterMechanicIds) {
                 DisabledEncounterMechanicIds.Add(mechanicId);
+            }
+            if (DisabledEncounterMechanicIds.Remove(
+                    LegacyDisabledNemesisProtocolId)) {
+                DisabledEncounterMechanicIds.Add(
+                    CurrentDisabledNemesisProtocolId);
+                try {
+                    SaveSettingsCore();
+                } catch (Exception exception) {
+                    Main.LogError(
+                        $"Encounter settings migration could not be saved to " +
+                        $"'{SettingsPath ?? "<unavailable>"}': {exception}");
+                }
             }
         } catch (Exception exception) {
             DisabledEncounterMechanicIds.Clear();

@@ -8,13 +8,15 @@ using Kingmaker.EntitySystem.Entities;
 namespace ChaosEncounters.Combat.Mechanics;
 
 internal static class EncounterMechanicController {
+    private const string LegacyNemesisProtocolMechanicId =
+        "Link";
     private static System.Random SelectionRandom;
 
     private static readonly IEncounterMechanic[] CommonMechanics = {
         new ExecutionListMechanic(),
         new RisingVengeanceMechanic(),
         new EqualizerMechanic(),
-        new LinkMechanic()
+        new NemesisProtocolMechanic()
     };
 
     private static readonly IEncounterMechanic[] BossMechanics = {
@@ -351,6 +353,9 @@ internal static class EncounterMechanicController {
         EncounterRestoreContext context,
         EncounterMechanicSaveData saveData,
         out string failureReason) {
+        mechanicId =
+            NormalizeLegacyMechanicIdForRestore(
+                mechanicId);
         failureReason = null;
         if (ActiveSession != null || ActiveMechanic != null) {
             Deactivate(
@@ -416,6 +421,17 @@ internal static class EncounterMechanicController {
             mechanic,
             EncounterMechanicEndReason.LoadedStateReplaced);
         return EncounterMechanicRestoreStatus.Invalid;
+    }
+
+    internal static string
+        NormalizeLegacyMechanicIdForRestore(
+        string mechanicId) {
+        return string.Equals(
+            mechanicId,
+            LegacyNemesisProtocolMechanicId,
+            StringComparison.Ordinal)
+            ? NemesisProtocolMechanic.MechanicId
+            : mechanicId;
     }
 
     internal static void Deactivate(

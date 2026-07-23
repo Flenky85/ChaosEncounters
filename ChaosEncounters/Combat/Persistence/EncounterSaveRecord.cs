@@ -1,3 +1,5 @@
+using Newtonsoft.Json;
+
 namespace ChaosEncounters.Combat.Persistence;
 
 internal enum EncounterSaveLifecycle {
@@ -29,7 +31,11 @@ internal sealed class PendingActivationSaveData {
 internal sealed class EncounterMechanicSaveData {
     public ExecutionListSaveRecipe ExecutionList { get; set; }
     public RisingVengeanceSaveRecipe RisingVengeance { get; set; }
-    public LinkSaveRecipe Link { get; set; }
+    public NemesisProtocolSaveRecipe NemesisProtocol { get; set; }
+    [JsonProperty(
+        "Link",
+        NullValueHandling = NullValueHandling.Ignore)]
+    public NemesisProtocolSaveRecipe LegacyLink { get; set; }
     public TyrantsAegisSaveRecipe TyrantsAegis { get; set; }
     public WallOfFleshSaveRecipe WallOfFlesh { get; set; }
     public EliteGuardSaveRecipe EliteGuard { get; set; }
@@ -49,11 +55,11 @@ internal sealed class RisingVengeanceMarkedEnemySaveData {
     public int Marks { get; set; }
 }
 
-internal sealed class LinkSaveRecipe {
-    public List<LinkGroupSaveData> Groups { get; set; }
+internal sealed class NemesisProtocolSaveRecipe {
+    public List<NemesisProtocolGroupSaveData> Groups { get; set; }
 }
 
-internal sealed class LinkGroupSaveData {
+internal sealed class NemesisProtocolGroupSaveData {
     public int Slot { get; set; }
     public string OwnerId { get; set; }
     public string LinkedEnemyId { get; set; }
