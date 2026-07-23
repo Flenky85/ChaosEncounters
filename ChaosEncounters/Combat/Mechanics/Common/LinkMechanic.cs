@@ -1,6 +1,8 @@
 using System.Collections.Generic;
+using ChaosEncounters.UI;
 using Kingmaker;
 using Kingmaker.EntitySystem.Entities;
+using UnityEngine;
 
 namespace ChaosEncounters.Combat.Mechanics.Common;
 
@@ -14,6 +16,12 @@ internal sealed class LinkMechanic :
     private const int MinimumGroupCount = 1;
     private const int MaximumGroupCount = 6;
     private const int MinimumInitialEnemyCount = 6;
+    private const string SlotOneMarkerText = "L1";
+    private const string SlotTwoMarkerText = "L2";
+    private const string SlotThreeMarkerText = "L3";
+    private const string SlotFourMarkerText = "L4";
+    private const string SlotFiveMarkerText = "L5";
+    private const string SlotSixMarkerText = "L6";
 
     private static System.Random AssignmentRandom;
 
@@ -106,6 +114,7 @@ internal sealed class LinkMechanic :
         }
 
         Groups = groups;
+        ApplyGroupMarkers(groups);
     }
 
     public void HandleRoundStart(int combatRound) {
@@ -215,6 +224,80 @@ internal sealed class LinkMechanic :
              index++) {
             groups[index].LinkedEnemy =
                 eligibleEnemies[index];
+        }
+    }
+
+    private static void ApplyGroupMarkers(
+        List<LinkGroup> groups) {
+        for (int index = 0;
+             index < groups.Count;
+             index++) {
+            LinkGroup group = groups[index];
+            string markerText =
+                GetMarkerText(group.Slot);
+            Color32 markerColor =
+                GetMarkerColor(group.Slot);
+
+            UnitMarker.SetMarker(
+                group.Owner,
+                markerText,
+                markerColor);
+            for (int petIndex = 0;
+                 petIndex < group.Pets.Count;
+                 petIndex++) {
+                UnitMarker.SetMarker(
+                    group.Pets[petIndex],
+                    markerText,
+                    markerColor);
+            }
+            UnitMarker.SetMarker(
+                group.LinkedEnemy,
+                markerText,
+                markerColor);
+        }
+    }
+
+    private static string GetMarkerText(int slot) {
+        switch (slot) {
+            case 1:
+                return SlotOneMarkerText;
+            case 2:
+                return SlotTwoMarkerText;
+            case 3:
+                return SlotThreeMarkerText;
+            case 4:
+                return SlotFourMarkerText;
+            case 5:
+                return SlotFiveMarkerText;
+            case 6:
+                return SlotSixMarkerText;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(slot),
+                    slot,
+                    "Links requires a group slot from 1 through 6.");
+        }
+    }
+
+    private static Color32 GetMarkerColor(int slot) {
+        switch (slot) {
+            case 1:
+                return ChaosColors.Red;
+            case 2:
+                return ChaosColors.Orange;
+            case 3:
+                return ChaosColors.Yellow;
+            case 4:
+                return ChaosColors.Green;
+            case 5:
+                return ChaosColors.Blue;
+            case 6:
+                return ChaosColors.Violet;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(slot),
+                    slot,
+                    "Links requires a group slot from 1 through 6.");
         }
     }
 
