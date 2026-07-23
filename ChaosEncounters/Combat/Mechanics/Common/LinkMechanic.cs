@@ -15,6 +15,8 @@ internal sealed class LinkMechanic :
     private const int MaximumGroupCount = 6;
     private const int MinimumInitialEnemyCount = 6;
 
+    private static System.Random AssignmentRandom;
+
     private List<LinkGroup> Groups;
 
     public string Id => MechanicId;
@@ -81,15 +83,26 @@ internal sealed class LinkMechanic :
 
         List<LinkGroup> groups =
             BuildGroups(party, partyAndPets);
+        List<BaseUnitEntity> eligibleEnemies =
+            BuildEligibleInitialEnemies(session);
         int ownerCount = groups.Count;
-        int enemyCount =
-            CountEligibleInitialEnemies(session);
+        int enemyCount = eligibleEnemies.Count;
         if (ownerCount < MinimumGroupCount ||
             ownerCount > MaximumGroupCount ||
             enemyCount < MinimumInitialEnemyCount ||
             enemyCount < ownerCount) {
             throw new InvalidOperationException(
                 "Links activation requirements changed before group construction completed.");
+        }
+
+        AssignLinkedEnemies(groups, eligibleEnemies);
+        for (int index = 0;
+             index < groups.Count;
+             index++) {
+            if (groups[index].LinkedEnemy == null) {
+                throw new InvalidOperationException(
+                    "Links could not assign an eligible initial enemy to every group.");
+            }
         }
 
         Groups = groups;
@@ -156,6 +169,53 @@ internal sealed class LinkMechanic :
         }
 
         return count;
+    }
+
+    private static List<BaseUnitEntity>
+        BuildEligibleInitialEnemies(
+            EncounterSession session) {
+        var eligibleEnemies =
+            new List<BaseUnitEntity>(
+                session.InitialEnemies.Count);
+        for (int index = 0;
+             index < session.InitialEnemies.Count;
+             index++) {
+            BaseUnitEntity enemy =
+                session.InitialEnemies[index];
+            if (IsEligibleInitialEnemy(enemy)) {
+                eligibleEnemies.Add(enemy);
+            }
+        }
+
+        return eligibleEnemies;
+    }
+
+    private static void AssignLinkedEnemies(
+        List<LinkGroup> groups,
+        List<BaseUnitEntity> eligibleEnemies) {
+        System.Random random = AssignmentRandom;
+        if (random == null) {
+            random = new System.Random();
+            AssignmentRandom = random;
+        }
+
+        for (int index = eligibleEnemies.Count - 1;
+             index > 0;
+             index--) {
+            int swapIndex = random.Next(index + 1);
+            BaseUnitEntity temporary =
+                eligibleEnemies[index];
+            eligibleEnemies[index] =
+                eligibleEnemies[swapIndex];
+            eligibleEnemies[swapIndex] = temporary;
+        }
+
+        for (int index = 0;
+             index < groups.Count;
+             index++) {
+            groups[index].LinkedEnemy =
+                eligibleEnemies[index];
+        }
     }
 
     private static List<LinkGroup> BuildGroups(
@@ -247,6 +307,7 @@ internal sealed class LinkMechanic :
         internal int Slot { get; }
         internal BaseUnitEntity Owner { get; }
         internal List<BaseUnitEntity> Pets { get; }
+        internal BaseUnitEntity LinkedEnemy { get; set; }
 
         internal LinkGroup(
             int slot,
