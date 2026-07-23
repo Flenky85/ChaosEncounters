@@ -55,7 +55,7 @@ internal sealed class EqualizerMechanic :
         if (session == null ||
             !session.SupportsEncounterType(
                 EncounterType.Common) ||
-            session.InitialEnemies.Count == 0) {
+            session.InitialEnemies.Count < 2) {
             return false;
         }
 
