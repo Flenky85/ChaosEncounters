@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using ChaosEncounters.Combat.Persistence;
 using ChaosEncounters.UI;
 using Kingmaker;
 using Kingmaker.EntitySystem.Entities;
@@ -8,14 +9,16 @@ namespace ChaosEncounters.Combat.Mechanics.Common;
 
 internal sealed class LinkMechanic :
     IEncounterMechanic,
-    IUnitCombatLifecycleAwareMechanic {
+    IUnitCombatLifecycleAwareMechanic,
+    IPersistableEncounterMechanic {
     private const string MechanicId = "Link";
     private const string MechanicDisplayName = "Links";
     private const string MechanicDescription =
-        "Each party member is paired with one enemy. Matching L1–L6 markers identify each character, their pets, and their linked target.";
+        "Each character and their pets are linked to one marked enemy. They deal full damage to that enemy and 20% damage to other enemies. When a link is lost, it moves to an available unlinked enemy; without a link, the group deals full damage to all enemies.";
     private const int MinimumGroupCount = 1;
     private const int MaximumGroupCount = 6;
     private const int MinimumInitialEnemyCount = 6;
+    private const int OffTargetDamageReductionPercent = 80;
     private const string SlotOneMarkerText = "L1";
     private const string SlotTwoMarkerText = "L2";
     private const string SlotThreeMarkerText = "L3";
@@ -180,6 +183,56 @@ internal sealed class LinkMechanic :
 
     public void HandleUnitJoinedCombat(
         BaseUnitEntity unit) {
+        List<LinkGroup> groups = Groups;
+        List<BaseUnitEntity> knownEnemies =
+            KnownEnemies;
+        if (groups == null ||
+            knownEnemies == null ||
+            unit == null) {
+            return;
+        }
+
+        if (IsEligiblePet(unit) &&
+            unit.Master != null) {
+            for (int groupIndex = 0;
+                 groupIndex < groups.Count;
+                 groupIndex++) {
+                LinkGroup group = groups[groupIndex];
+                if (!ReferenceEquals(
+                        group.Owner,
+                        unit.Master)) {
+                    continue;
+                }
+
+                for (int petIndex = 0;
+                     petIndex < group.Pets.Count;
+                     petIndex++) {
+                    if (ReferenceEquals(
+                            group.Pets[petIndex],
+                            unit)) {
+                        return;
+                    }
+                }
+
+                group.Pets.Add(unit);
+                SynchronizeGroupState(group);
+                return;
+            }
+
+            return;
+        }
+
+        if (IsEligibleInitialEnemy(unit)) {
+            if (FindEnemyIndex(
+                    knownEnemies,
+                    unit) >= 0) {
+                return;
+            }
+
+            knownEnemies.Add(unit);
+            RebalanceLinks(groups, knownEnemies);
+            return;
+        }
     }
 
     public void HandleUnitLeftCombat(
@@ -206,11 +259,16 @@ internal sealed class LinkMechanic :
             BaseUnitEntity linkedEnemy =
                 group.LinkedEnemy;
             UnitMarker.ClearMarker(group.Owner);
+            DamageControl.ClearOffTargetDamageReduction(
+                group.Owner);
             for (int petIndex = 0;
                  petIndex < group.Pets.Count;
                  petIndex++) {
                 UnitMarker.ClearMarker(
                     group.Pets[petIndex]);
+                DamageControl
+                    .ClearOffTargetDamageReduction(
+                        group.Pets[petIndex]);
             }
             if (linkedEnemy != null) {
                 UnitMarker.ClearMarker(linkedEnemy);
@@ -238,6 +296,8 @@ internal sealed class LinkMechanic :
 
                 pets.RemoveAt(petIndex);
                 UnitMarker.ClearMarker(unit);
+                DamageControl
+                    .ClearOffTargetDamageReduction(unit);
                 return;
             }
         }
@@ -267,6 +327,315 @@ internal sealed class LinkMechanic :
         }
 
         return;
+    }
+
+    bool IPersistableEncounterMechanic.TryCaptureSaveData(
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (saveData == null) {
+            failureReason =
+                "The Links save-data container is unavailable.";
+            return false;
+        }
+        if (saveData.Link != null) {
+            failureReason =
+                "The Links save-data container is already populated.";
+            return false;
+        }
+
+        List<LinkGroup> groups = Groups;
+        List<BaseUnitEntity> knownEnemies =
+            KnownEnemies;
+        if (groups == null || knownEnemies == null) {
+            failureReason =
+                "Links is not initialized for save capture.";
+            return false;
+        }
+        if (groups.Count > MaximumGroupCount) {
+            failureReason =
+                $"The Links group count exceeds {MaximumGroupCount}.";
+            return false;
+        }
+
+        var knownEnemyIds = new HashSet<string>(
+            StringComparer.Ordinal);
+        for (int index = 0;
+             index < knownEnemies.Count;
+             index++) {
+            BaseUnitEntity enemy = knownEnemies[index];
+            string enemyId = enemy?.UniqueId;
+            if (!IsEligibleInitialEnemy(enemy) ||
+                !EncounterPersistenceValidation
+                    .IsValidEntityId(enemyId)) {
+                failureReason =
+                    $"The Links known enemy at index {index} is not a valid living combat enemy.";
+                return false;
+            }
+            if (!knownEnemyIds.Add(enemyId)) {
+                failureReason =
+                    $"The Links known enemy at index {index} has a duplicate persistent ID.";
+                return false;
+            }
+        }
+
+        var savedGroups = new List<LinkGroupSaveData>(
+            groups.Count);
+        var uniqueSlots = new HashSet<int>();
+        var uniqueOwnerIds = new HashSet<string>(
+            StringComparer.Ordinal);
+        var uniqueTargetIds = new HashSet<string>(
+            StringComparer.Ordinal);
+        for (int index = 0;
+             index < groups.Count;
+             index++) {
+            LinkGroup group = groups[index];
+            if (group == null ||
+                group.Slot < MinimumGroupCount ||
+                group.Slot > MaximumGroupCount ||
+                !uniqueSlots.Add(group.Slot)) {
+                failureReason =
+                    $"The Links group at index {index} has an invalid or duplicate slot.";
+                return false;
+            }
+
+            BaseUnitEntity owner = group.Owner;
+            string ownerId = owner?.UniqueId;
+            if (owner == null ||
+                !EncounterPersistenceValidation
+                    .IsValidEntityId(ownerId) ||
+                !uniqueOwnerIds.Add(ownerId)) {
+                failureReason =
+                    $"The Links group at index {index} has an invalid or duplicate owner.";
+                return false;
+            }
+
+            string linkedEnemyId = null;
+            BaseUnitEntity linkedEnemy =
+                group.LinkedEnemy;
+            if (linkedEnemy != null) {
+                linkedEnemyId = linkedEnemy.UniqueId;
+                if (!IsEligibleInitialEnemy(linkedEnemy) ||
+                    FindEnemyIndex(
+                        knownEnemies,
+                        linkedEnemy) < 0 ||
+                    !EncounterPersistenceValidation
+                        .IsValidEntityId(linkedEnemyId) ||
+                    !uniqueTargetIds.Add(linkedEnemyId)) {
+                    failureReason =
+                        $"The Links group at index {index} has an invalid, unknown, or duplicate linked enemy.";
+                    return false;
+                }
+            }
+
+            savedGroups.Add(
+                new LinkGroupSaveData {
+                    Slot = group.Slot,
+                    OwnerId = ownerId,
+                    LinkedEnemyId = linkedEnemyId
+                });
+        }
+
+        saveData.Link = new LinkSaveRecipe {
+            Groups = savedGroups
+        };
+        return true;
+    }
+
+    bool IPersistableEncounterMechanic.TryRestoreFromSave(
+        EncounterRestoreContext context,
+        EncounterMechanicSaveData saveData,
+        out string failureReason) {
+        failureReason = null;
+        if (Groups != null || KnownEnemies != null) {
+            failureReason =
+                "Links is already active.";
+            return false;
+        }
+        if (context == null) {
+            failureReason =
+                "The Links restore context is unavailable.";
+            return false;
+        }
+
+        LinkSaveRecipe recipe = saveData?.Link;
+        if (recipe == null) {
+            failureReason =
+                "The Links save recipe is missing.";
+            return false;
+        }
+        List<LinkGroupSaveData> savedGroups =
+            recipe.Groups;
+        if (savedGroups == null) {
+            failureReason =
+                "The Links saved group list is missing.";
+            return false;
+        }
+        if (savedGroups.Count > MaximumGroupCount) {
+            failureReason =
+                $"The Links saved group count exceeds {MaximumGroupCount}.";
+            return false;
+        }
+
+        var uniqueSlots = new HashSet<int>();
+        var uniqueOwnerIds = new HashSet<string>(
+            StringComparer.Ordinal);
+        var uniqueTargetIds = new HashSet<string>(
+            StringComparer.Ordinal);
+        for (int index = 0;
+             index < savedGroups.Count;
+             index++) {
+            LinkGroupSaveData entry =
+                savedGroups[index];
+            if (entry == null ||
+                entry.Slot < MinimumGroupCount ||
+                entry.Slot > MaximumGroupCount ||
+                !uniqueSlots.Add(entry.Slot)) {
+                failureReason =
+                    $"The Links saved group at index {index} has an invalid or duplicate slot.";
+                return false;
+            }
+            if (!EncounterPersistenceValidation
+                    .IsValidEntityId(entry.OwnerId) ||
+                !uniqueOwnerIds.Add(entry.OwnerId)) {
+                failureReason =
+                    $"The Links saved group at index {index} has an invalid or duplicate owner ID.";
+                return false;
+            }
+            if (entry.LinkedEnemyId != null &&
+                (!EncounterPersistenceValidation
+                    .IsValidEntityId(
+                        entry.LinkedEnemyId) ||
+                 !uniqueTargetIds.Add(
+                     entry.LinkedEnemyId))) {
+                failureReason =
+                    $"The Links saved group at index {index} has an invalid or duplicate linked-enemy ID.";
+                return false;
+            }
+        }
+
+        Game game = Game.Instance;
+        List<BaseUnitEntity> party =
+            game?.Player?.Party;
+        List<BaseUnitEntity> partyAndPets =
+            game?.Player?.PartyAndPets;
+        if (party == null || partyAndPets == null) {
+            failureReason =
+                "Links requires available party collections during restoration.";
+            return false;
+        }
+
+        var restoredKnownEnemies =
+            new List<BaseUnitEntity>(
+                context.LivingEnemies.Count);
+        var knownEnemyIds = new HashSet<string>(
+            StringComparer.Ordinal);
+        for (int index = 0;
+             index < context.LivingEnemies.Count;
+             index++) {
+            BaseUnitEntity enemy =
+                context.LivingEnemies[index];
+            if (!IsEligibleInitialEnemy(enemy)) {
+                continue;
+            }
+
+            string enemyId = enemy.UniqueId;
+            if (!EncounterPersistenceValidation
+                    .IsValidEntityId(enemyId) ||
+                !knownEnemyIds.Add(enemyId)) {
+                failureReason =
+                    $"The Links loaded enemy at index {index} has an invalid or duplicate persistent ID.";
+                return false;
+            }
+            restoredKnownEnemies.Add(enemy);
+        }
+
+        var restoredGroups = new List<LinkGroup>(
+            savedGroups.Count);
+        for (int index = 0;
+             index < savedGroups.Count;
+             index++) {
+            LinkGroupSaveData entry =
+                savedGroups[index];
+            if (!TryResolveOwner(
+                    party,
+                    entry.OwnerId,
+                    out BaseUnitEntity owner)) {
+                failureReason =
+                    $"The Links owner for saved group index {index} could not be restored.";
+                return false;
+            }
+
+            var group = new LinkGroup(
+                entry.Slot,
+                owner);
+            if (entry.LinkedEnemyId != null) {
+                if (!context.TryResolveEnemy(
+                        entry.LinkedEnemyId,
+                        requireLiving: true,
+                        out BaseUnitEntity linkedEnemy) ||
+                    FindEnemyIndex(
+                        restoredKnownEnemies,
+                        linkedEnemy) < 0) {
+                    failureReason =
+                        $"The Links target for saved group index {index} could not be restored.";
+                    return false;
+                }
+                group.LinkedEnemy = linkedEnemy;
+            }
+            restoredGroups.Add(group);
+        }
+
+        for (int petIndex = 0;
+             petIndex < partyAndPets.Count;
+             petIndex++) {
+            BaseUnitEntity pet =
+                partyAndPets[petIndex];
+            if (!IsEligiblePet(pet) ||
+                pet.Master == null) {
+                continue;
+            }
+
+            for (int groupIndex = 0;
+                 groupIndex < restoredGroups.Count;
+                 groupIndex++) {
+                LinkGroup group =
+                    restoredGroups[groupIndex];
+                if (!ReferenceEquals(
+                        group.Owner,
+                        pet.Master)) {
+                    continue;
+                }
+                if (FindPetIndex(
+                        group.Pets,
+                        pet) < 0) {
+                    group.Pets.Add(pet);
+                }
+                break;
+            }
+        }
+
+        KnownEnemies = restoredKnownEnemies;
+        Groups = restoredGroups;
+        int linkedGroupCount = 0;
+        for (int index = 0;
+             index < restoredGroups.Count;
+             index++) {
+            LinkGroup group = restoredGroups[index];
+            SynchronizeGroupState(group);
+            if (group.LinkedEnemy != null) {
+                linkedGroupCount++;
+            }
+        }
+
+        if (linkedGroupCount > 0) {
+            EncounterHud.Show(
+                DisplayName,
+                Description);
+        } else {
+            EncounterHud.Hide();
+        }
+        return true;
     }
 
     public void Deactivate(
@@ -352,7 +721,7 @@ internal sealed class LinkMechanic :
         for (int index = 0;
              index < groups.Count;
              index++) {
-            SynchronizeGroupPresentation(
+            SynchronizeGroupState(
                 groups[index]);
         }
     }
@@ -381,7 +750,7 @@ internal sealed class LinkMechanic :
                             selectedOrdinal);
                 }
 
-                SynchronizeGroupPresentation(group);
+                SynchronizeGroupState(group);
             }
             if (group.LinkedEnemy != null) {
                 linkedGroupCount++;
@@ -469,6 +838,44 @@ internal sealed class LinkMechanic :
         return -1;
     }
 
+    private static int FindPetIndex(
+        List<BaseUnitEntity> pets,
+        BaseUnitEntity pet) {
+        for (int index = 0;
+             index < pets.Count;
+             index++) {
+            if (ReferenceEquals(
+                    pets[index],
+                    pet)) {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool TryResolveOwner(
+        List<BaseUnitEntity> party,
+        string ownerId,
+        out BaseUnitEntity owner) {
+        owner = null;
+        for (int index = 0;
+             index < party.Count;
+             index++) {
+            BaseUnitEntity candidate = party[index];
+            if (IsEligibleOwner(candidate) &&
+                string.Equals(
+                    candidate.UniqueId,
+                    ownerId,
+                    StringComparison.Ordinal)) {
+                owner = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static System.Random GetAssignmentRandom() {
         System.Random random = AssignmentRandom;
         if (random == null) {
@@ -479,17 +886,22 @@ internal sealed class LinkMechanic :
         return random;
     }
 
-    private static void SynchronizeGroupPresentation(
+    private static void SynchronizeGroupState(
         LinkGroup group) {
         BaseUnitEntity linkedEnemy =
             group.LinkedEnemy;
         if (linkedEnemy == null) {
             UnitMarker.ClearMarker(group.Owner);
+            DamageControl.ClearOffTargetDamageReduction(
+                group.Owner);
             for (int index = 0;
                  index < group.Pets.Count;
                  index++) {
                 UnitMarker.ClearMarker(
                     group.Pets[index]);
+                DamageControl
+                    .ClearOffTargetDamageReduction(
+                        group.Pets[index]);
             }
 
             return;
@@ -503,6 +915,10 @@ internal sealed class LinkMechanic :
             group.Owner,
             markerText,
             markerColor);
+        DamageControl.SetOffTargetDamageReduction(
+            group.Owner,
+            linkedEnemy,
+            OffTargetDamageReductionPercent);
         for (int index = 0;
              index < group.Pets.Count;
              index++) {
@@ -510,6 +926,10 @@ internal sealed class LinkMechanic :
                 group.Pets[index],
                 markerText,
                 markerColor);
+            DamageControl.SetOffTargetDamageReduction(
+                group.Pets[index],
+                linkedEnemy,
+                OffTargetDamageReductionPercent);
         }
         UnitMarker.SetMarker(
             linkedEnemy,
